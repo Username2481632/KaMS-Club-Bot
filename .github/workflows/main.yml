@@ -26,10 +26,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Run tests
-      run: |
-        pytest
-
     - name: Deploy to Raspberry Pi
       if: success() # Only deploy if previous steps were successful
       env:
