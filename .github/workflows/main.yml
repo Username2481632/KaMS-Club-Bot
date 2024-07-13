@@ -13,21 +13,22 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
+    - name: Checkout repository
+      uses: actions/checkout@v2
 
-      - name: Install dependencies
-        run: |
-          python3 -m pip install -r requirements.txt
+    - name: Install dependencies
+      run: |
+        python3 -m pip install --upgrade pip
+        python3 -m pip install -r requirements.txt
 
-      - name: Transfer code to Raspberry Pi
-        run: |
-          ssh pi@raspberry.local 'mkdir -p ~/app'
-          scp -r * pi@raspberry.local:~/app
+    - name: Transfer code to Raspberry Pi
+      run: |
+        ssh pi@raspberry.local 'mkdir -p ~/app'
+        scp -r * pi@raspberry.local:~/app
 
-      - name: Restart bot.py on Raspberry Pi
-        run: |
-          ssh pi@raspberry.local 'pkill -f bot.py'
-          ssh pi@raspberry.local 'cd ~/app && python3 bot.py &'
+    - name: Restart bot.py on Raspberry Pi
+      run: |
+        ssh pi@raspberry.local 'pkill -f bot.py'
+        ssh pi@raspberry.local 'cd ~/app && python3 bot.py &'
 
-      # Optionally, add more steps for testing, notifications, etc.
+    # Optionally, add more steps for testing, notifications, etc.
