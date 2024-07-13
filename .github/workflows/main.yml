@@ -1,41 +1,42 @@
-name: CI Pipeline
+name: Deploy to Raspberry Pi
 
 on:
   push:
     branches:
-      - main
-  pull_request:
-    branches:
-      - main
+      - main  # Adjust branch name as needed
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
 
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      RASPBERRY_PI_HOSTNAME: raspberry.local  # Replace with your Raspberry Pi's hostname
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
+      - name: Set up SSH keys and known hosts
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H $RASPBERRY_PI_HOSTNAME >> ~/.ssh/known_hosts
 
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.x
+      - name: Create directory on Raspberry Pi
+        run: |
+          ssh -o StrictHostKeyChecking=no pi@$RASPBERRY_PI_HOSTNAME 'mkdir -p ~/app' || { echo "Failed to create directory ~/app on Raspberry Pi"; exit 1; }
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+      - name: Copy files to Raspberry Pi
+        run: |
+          scp -o StrictHostKeyChecking=no -r * pi@$RASPBERRY_PI_HOSTNAME:~/app || { echo "Failed to copy files to Raspberry Pi"; exit 1; }
 
-    - name: Deploy to Raspberry Pi
-      if: success() # Only deploy if previous steps were successful
-      env:
-        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-        RASPBERRY_PI_IP: 192.168.86.58  # Replace with your Raspberry Pi's IP address
-      run: |
-        mkdir -p ~/.ssh
-        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H $RASPBERRY_PI_IP >> ~/.ssh/known_hosts
-        ssh -o StrictHostKeyChecking=no pi@$RASPBERRY_PI_IP 'mkdir -p ~/app' || { echo "Failed to create directory ~/app on Raspberry Pi"; exit 1; }
-        scp -o StrictHostKeyChecking=no -r * pi@$RASPBERRY_PI_IP:~/app || { echo "Failed to copy files to Raspberry Pi"; exit 1; }
-        ssh -o StrictHostKeyChecking=no pi@$RASPBERRY_PI_IP 'cd ~/app && ./deploy_script.sh' || { echo "Failed to execute deploy_script.sh on Raspberry Pi"; exit 1; }
+      - name: Execute deployment script on Raspberry Pi
+        run: |
+          ssh -o StrictHostKeyChecking=no pi@$RASPBERRY_PI_HOSTNAME 'cd ~/app && ./deploy_script.sh' || { echo "Failed to execute deploy_script.sh on Raspberry Pi"; exit 1; }
+
+      - name: Cleanup SSH keys
+        run: |
+          rm -rf ~/.ssh
+
+      - name: Finish Deployment
+        run: |
+          echo "Deployment to Raspberry Pi completed successfully."
