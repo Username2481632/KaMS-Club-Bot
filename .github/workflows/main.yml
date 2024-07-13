@@ -36,8 +36,9 @@ jobs:
         echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H $RASPBERRY_PI_IP >> ~/.ssh/known_hosts
-        ssh -o StrictHostKeyChecking=no pi@$RASPBERRY_PI_IP 'mkdir -p ~/app'
-        scp -o StrictHostKeyChecking=no -r * pi@$RASPBERRY_PI_IP:~/app
-        ssh -o StrictHostKeyChecking=no pi@$RASPBERRY_PI_IP 'cd ~/app && ./deploy_script.sh'
-
-
+        ssh -o StrictHostKeyChecking=no pi@$RASPBERRY_PI_IP 'mkdir -p ~/app' || exit 1
+        scp -o StrictHostKeyChecking=no -r * pi@$RASPBERRY_PI_IP:~/app || exit 1
+        ssh -o StrictHostKeyChecking=no pi@$RASPBERRY_PI_IP 'cd ~/app && ./deploy_script.sh' || exit 1
+    
+    
+    
