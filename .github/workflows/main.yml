@@ -38,7 +38,7 @@ jobs:
         mkdir -p ~/.ssh
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H your_raspberry_pi_ip >> ~/.ssh/known_hosts
-        ssh -o StrictHostKeyChecking=no pi@your_raspberry_pi_ip 'mkdir -p ~/app'
-        scp -o StrictHostKeyChecking=no -r * pi@your_raspberry_pi_ip:~/app
-        ssh -o StrictHostKeyChecking=no pi@your_raspberry_pi_ip 'cd ~/app && ./deploy_script.sh'
+        ssh-keyscan -H raspberry.local >> ~/.ssh/known_hosts
+        ssh -o StrictHostKeyChecking=no pi@raspberry.local 'mkdir -p ~/app'
+        scp -o StrictHostKeyChecking=no -r * pi@raspberry.local:~/app
+        ssh -o StrictHostKeyChecking=no pi@raspberry.local 'cd ~/app && ./deploy_script.sh'
