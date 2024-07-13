@@ -33,6 +33,8 @@ jobs:
         scp -r * pi@raspberry.local:~/app
 
     - name: Restart bot.py on Raspberry Pi
+      env:
+        DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
       run: |
         ssh pi@raspberry.local 'pkill -f bot.py'
         ssh pi@raspberry.local 'cd ~/app && python bot.py &'
