@@ -29,6 +29,4 @@ jobs:
 
       - name: Restart bot.py on Raspberry Pi
         run: |
-          ssh pi@raspberry.local 'cd ~/app && source myenv/bin/activate && python bot.py'
-
-      # Optionally, add more steps for testing, notifications, etc.
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no pi@raspberry.local 'cd ~/app && source myenv/bin/activate && python bot.py'
