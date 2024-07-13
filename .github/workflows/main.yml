@@ -30,7 +30,7 @@ jobs:
       if: success() # Only deploy if previous steps were successful
       env:
         SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-        RASPBERRY_PI_IP: <RASPBERRY_PI_IP>  # Replace with your Raspberry Pi's IP address
+        RASPBERRY_PI_IP: 192.168.86.58  # Replace with your Raspberry Pi's IP address
       run: |
         mkdir -p ~/.ssh
         echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
