@@ -24,14 +24,5 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}  # Raspberry Pi SSH username
           key: ${{ secrets.SSH_PRIVATE_KEY }}  # SSH private key for authentication
           source: "."  # Source directory or files to copy
-          target: "~/KaMS-Club-Bot"  # Target directory on Raspberry Pi
+          target: "/path/to/destination/folder"  # Target directory on Raspberry Pi
 
-      - name: Run deployment script on Raspberry Pi
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.PI_HOST }}
-          username: ${{ secrets.PI_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            cd ~/KaMS-Club-Bot
-            python3 bot.py  # Replace with your deployment script name
