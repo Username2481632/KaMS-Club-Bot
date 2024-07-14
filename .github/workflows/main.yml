@@ -18,7 +18,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Kill existing bot.py process
-        uses: appleboy/ssh-action@v0.1.3
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.PI_HOST }}
           username: ${{ secrets.PI_USERNAME }}
