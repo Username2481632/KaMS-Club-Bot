@@ -23,8 +23,8 @@ jobs:
           host: ${{ secrets.PI_HOST }}
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          password: "yrrebpsaR"
           script: pkill -f bot.py
+          debug: true
 
       - name: Deploy to Raspberry Pi
         uses: appleboy/scp-action@v0.1.7
