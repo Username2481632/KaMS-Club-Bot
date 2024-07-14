@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest  # GitHub Actions default runner
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -27,7 +27,7 @@ jobs:
             pkill -f bot.py
 
       - name: Deploy to Raspberry Pi
-        uses: appleboy/scp-action@v1.0.3
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.PI_HOST }}  # Raspberry Pi IP address or hostname
           username: ${{ secrets.PI_USERNAME }}  # Raspberry Pi SSH username
