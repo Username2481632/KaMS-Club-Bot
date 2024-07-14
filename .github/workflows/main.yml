@@ -1,47 +1,23 @@
-name: Deploy to Raspberry Pi
+# CI/CD Workflow to Connect to Raspberry Pi in Home network.
+
+name: Raspberry Pi Connect
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest  # GitHub Actions default runner
+  test-connectivity:
+    name: Test connectivity
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Kill existing bot.py process
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.PI_HOST }}
-          username: ${{ secrets.PI_USERNAME }}
-          # key: ${{ secrets.SSH_PRIVATE_KEY }}
-          password: "yrrebpsaR"
-          script: pkill -f bot.py
-          debug: true
-
-      - name: Deploy to Raspberry Pi
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.PI_HOST }}  # Raspberry Pi IP address or hostname
-          username: ${{ secrets.PI_USERNAME }}  # Raspberry Pi SSH username
-          key: ${{ secrets.SSH_PRIVATE_KEY }}  # SSH private key for authentication
-          source: "."  # Source directory or files to copy
-          target: "~/KaMS-Club-Bot"  # Target directory on Raspberry Pi
-
-      - name: Run deployment script on Raspberry Pi
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Test access to host (remote ssh commands)
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.PI_HOST }}
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd ~/KaMS-Club-Bot
-            python3 bot.py
+            whoami
+            hostname -I | awk '{print $1}'
+            curl ifconfig.me
