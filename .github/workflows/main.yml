@@ -14,7 +14,7 @@ jobs:
       - name: Test access to host (remote ssh commands)
         uses: appleboy/ssh-action@v0.1.5
         with:
-          host: ${{ secrets.PI_HOST }}
+          host: ${{ secrets.HOST }}
           username: ${{ secrets.PI_USERNAME }}
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
