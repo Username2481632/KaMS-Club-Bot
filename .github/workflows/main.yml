@@ -22,7 +22,8 @@ jobs:
         with:
           host: ${{ secrets.PI_HOST }}
           username: ${{ secrets.PI_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # key: ${{ secrets.SSH_PRIVATE_KEY }}
+          password: "yrrebpsaR"
           script: pkill -f bot.py
           debug: true
 
