@@ -31,6 +31,7 @@ jobs:
           host: ${{ secrets.PI_HOST }}  # Raspberry Pi IP address or hostname
           username: ${{ secrets.PI_USERNAME }}  # Raspberry Pi SSH username
           key: ${{ secrets.SSH_PRIVATE_KEY }}  # SSH private key for authentication
+          password: "yrrebpsaR"
           source: "."  # Source directory or files to copy
           target: "~/KaMS-Club-Bot"  # Target directory on Raspberry Pi
 
