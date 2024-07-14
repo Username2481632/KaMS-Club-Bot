@@ -12,11 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Test access to host (remote ssh commands)
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v0.1.5
         with:
           host: ${{ secrets.PI_HOST }}
           username: ${{ secrets.PI_USERNAME }}
-          port: 22
+          port: 8000
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             whoami
