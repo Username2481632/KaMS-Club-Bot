@@ -17,23 +17,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: SSH Command to stop script
+      - name: Kill existing bot.py process
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.PI_HOST }}
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            sudo systemctl stop my-bot-service  # Replace with your service stop command
+            pkill -f bot.py  # Kills any process containing 'bot.py'
 
       - name: Deploy to Raspberry Pi
         uses: appleboy/scp-action@master
         with:
-          host: ${{ secrets.PI_HOST }}
-          username: ${{ secrets.PI_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "."
-          target: "~/KaMS-Club-Bot"
+          host: ${{ secrets.PI_HOST }}  # Raspberry Pi IP address or hostname
+          username: ${{ secrets.PI_USERNAME }}  # Raspberry Pi SSH username
+          key: ${{ secrets.SSH_PRIVATE_KEY }}  # SSH private key for authentication
+          source: "."  # Source directory or files to copy
+          target: "~/KaMS-Club-Bot"  # Target directory on Raspberry Pi
 
       - name: Run deployment script on Raspberry Pi
         uses: appleboy/ssh-action@master
@@ -43,13 +43,4 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd ~/KaMS-Club-Bot
-            python3 bot.py
-
-      - name: SSH Command to start script
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.PI_HOST }}
-          username: ${{ secrets.PI_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            sudo systemctl start my-bot-service  # Replace with your service start command
+            python3 bot.py  # Replace with your deployment script name
