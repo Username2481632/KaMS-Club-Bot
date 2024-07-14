@@ -3,7 +3,7 @@ name: Deploy to Raspberry Pi
 on:
   push:
     branches:
-      - main  # Adjust as per your branch name
+      - main
 
 jobs:
   deploy:
@@ -18,7 +18,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Kill existing bot.py process
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.PI_HOST }}
           username: ${{ secrets.PI_USERNAME }}
@@ -27,7 +27,7 @@ jobs:
             pkill -f bot.py
 
       - name: Deploy to Raspberry Pi
-        uses: appleboy/scp-action@master
+        uses: appleboy/scp-action@v1.0.3
         with:
           host: ${{ secrets.PI_HOST }}  # Raspberry Pi IP address or hostname
           username: ${{ secrets.PI_USERNAME }}  # Raspberry Pi SSH username
@@ -36,11 +36,11 @@ jobs:
           target: "~/KaMS-Club-Bot"  # Target directory on Raspberry Pi
 
       - name: Run deployment script on Raspberry Pi
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.PI_HOST }}
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd ~/KaMS-Club-Bot
-            python3 bot.py  # Replace with your deployment script name
+            python3 bot.py
