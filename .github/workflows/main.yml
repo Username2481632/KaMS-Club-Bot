@@ -23,9 +23,8 @@ jobs:
           host: ${{ secrets.PI_HOST }}
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          timeout: 600s
           script: |
-            pkill -f bot.py  # Kills any process containing 'bot.py'
+            pkill -f bot.py
 
       - name: Deploy to Raspberry Pi
         uses: appleboy/scp-action@master
