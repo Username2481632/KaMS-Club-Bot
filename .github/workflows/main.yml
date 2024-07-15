@@ -24,7 +24,7 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          script: pkill -f bot.py || [ $? -eq 1 ]
+          script: pkill -f "[b]ot.py" || [ $? -eq 1 ]
 
       - name: Deploy to Raspberry Pi
         uses: appleboy/scp-action@v0.1.7
