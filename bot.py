@@ -1,7 +1,8 @@
 import datetime
 import json
 import os
-
+import signal
+import sys
 import discord
 import numpy as np
 from discord.ext import commands
@@ -179,6 +180,17 @@ async def on_member_join(member):
     except Exception as e:
         print(f"Failed to add role to {member.display_name}: {e}")
 
+
+# Define the signal handler function
+def signal_handler(sig, frame):
+    print('SIGTERM received. Gracefully shutting down the bot.')
+    # Perform any necessary cleanup here
+    bot.close()  # Gracefully close the Discord bot connection
+    sys.exit(0)  # Exit the script
+
+
+# Register the signal handler for SIGTERM
+signal.signal(signal.SIGTERM, signal_handler)
 
 # Run the bot
 bot.run(TOKEN)
