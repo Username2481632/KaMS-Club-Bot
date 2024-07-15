@@ -24,7 +24,7 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          script: pkill -f bot.py
+          script: pgrep -f bot.py | xargs -r kill -SIGTERM
 
       - name: Deploy to Raspberry Pi
         uses: appleboy/scp-action@v0.1.7
@@ -35,6 +35,9 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           source: "."  # Source directory or files to copy
           target: "~/KaMS-Club-Bot"  # Target directory on Raspberry Pi
+          recursive: true
+          rm: true
+          exclude: ".github"
 
       - name: Run deployment script on Raspberry Pi
         uses: appleboy/ssh-action@v1.0.3
