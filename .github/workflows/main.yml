@@ -11,19 +11,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
-      - name: Install dependencies on Raspberry Pi
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.PI_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            cd ~/KaMS-Club-Bot/src
-            python3 -m pip install --upgrade pip
-            python3 -m pip install -r <(curl -sL "https://raw.githubusercontent.com/${{ github.repository }}/main/requirements.txt")
-            
+      
       - name: Kill existing bot.py process
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -45,6 +33,20 @@ jobs:
           recursive: true
           rm: true
           exclude: ".github,requirements.txt,LICENSE"
+
+      - name: Install dependencies on Raspberry Pi
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.PI_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd ~/KaMS-Club-Bot/src
+            python3 -m venv venv
+            source venv/bin/activate
+            pip install --upgrade pip
+            pip install -r <(curl -sL "https://raw.githubusercontent.com/${{ github.repository }}/main/requirements.txt")
 
       - name: Run deployment script on Raspberry Pi
         uses: appleboy/ssh-action@v1.0.3
