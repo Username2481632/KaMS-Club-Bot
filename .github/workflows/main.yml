@@ -34,7 +34,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           source: "."  # Source directory or files to copy
-          target: "~/KaMS-Club-Bot"  # Target directory on Raspberry Pi
+          target: "~/KaMS-Club-Bot/src"  # Target directory on Raspberry Pi
           recursive: true
           rm: true
           exclude: ".github"
@@ -47,5 +47,5 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            cd ~/KaMS-Club-Bot
-            python3 bot.py
+            cd ~/KaMS-Club-Bot/src
+            python3 bot.py > ../bot.log 2>&1  # Redirect stdout and stderr to bot.log file
