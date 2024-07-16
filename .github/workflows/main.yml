@@ -48,4 +48,4 @@ jobs:
             venv/bin/python3 -m pip install --upgrade pip
             pip install -r <(curl -sL "https://raw.githubusercontent.com/${{ github.repository }}/main/requirements.txt")
             export DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}"
-            nohup python3 bot.py > ../bot.log 2>&1  # Redirect stdout and stderr to bot.log file
+            nohup python3 bot.py > ../bot.log 2>&1 &
