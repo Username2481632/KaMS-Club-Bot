@@ -29,7 +29,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           source: "src/"
-          target: "~/KaMS-Club-Bot/src"
+          target: "~/KaMS-Club-Bot/src/"
           rm: true
           strip_components: 1
 
