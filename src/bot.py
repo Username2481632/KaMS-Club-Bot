@@ -160,6 +160,12 @@ async def slash_downvote(interaction: discord.Interaction, user: discord.User):
 
 async def timeout_user(member: discord.Member, minutes: float):
     duration = datetime.timedelta(minutes=minutes)
+    # If member is not currently timed out, send them a DM
+    if not member.timed_out_until:
+        try:
+            await member.send(f"You have been timed out for {minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a moderator.")
+        except Exception as e:
+            print(f"Failed to send DM to {member.display_name}: {e}")
     await member.edit(timed_out_until=discord.utils.utcnow() + duration)
     print(f"{member.display_name} has been timed out for {minutes} minutes.")
 
