@@ -28,7 +28,7 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          source: "./src"  # Source directory of files to copy
+          source: "./src/"  # Source directory of files to copy
           target: "~/KaMS-Club-Bot/src"  # Target directory on Raspberry Pi
           rm: true
 
