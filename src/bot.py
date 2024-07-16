@@ -139,7 +139,6 @@ async def slash_downvote(interaction: discord.Interaction, user: discord.User):
     await vote(interaction, user, 'downvote')
 
 
-# Mockup function to time out a user (adjust as per your bot's capabilities)
 async def timeout_user(member: discord.Member, minutes: float):
     duration = datetime.timedelta(minutes=minutes)
     await member.edit(timed_out_until=discord.utils.utcnow() + duration)
