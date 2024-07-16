@@ -41,12 +41,14 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             cd ~/KaMS-Club-Bot/src
+            pwd
             if [ ! -d "venv" ]; then
               echo "creating new venv"
+              exit 1
               python3 -m venv venv
             fi
             source venv/bin/activate
-            venv/bin/python3 -m pip install --upgrade pip
+            pip install --upgrade pip
             pip install -r <(curl -sL "https://raw.githubusercontent.com/${{ github.repository }}/main/requirements.txt")
             export DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}"
             nohup python3 bot.py > ../bot.log 2>&1 &
