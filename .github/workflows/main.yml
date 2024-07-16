@@ -34,8 +34,6 @@ jobs:
 
       - name: Install dependencies on Raspberry Pi and run bot.py
         uses: appleboy/ssh-action@v1.0.3
-        env:
-          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.PI_USERNAME }}
@@ -49,4 +47,5 @@ jobs:
             source venv/bin/activate
             pip install --upgrade pip
             pip install -r <(curl -sL "https://raw.githubusercontent.com/${{ github.repository }}/main/requirements.txt")
+            export DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}"
             python3 bot.py > ../bot.log 2>&1  # Redirect stdout and stderr to bot.log file
