@@ -30,6 +30,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           source: "./src/*"  # Source directory of files to copy
           target: "~/KaMS-Club-Bot/src/"  # Target directory on Raspberry Pi
+          rm: true
 
       - name: Install dependencies on Raspberry Pi and run bot.py
         uses: appleboy/ssh-action@v1.0.3
