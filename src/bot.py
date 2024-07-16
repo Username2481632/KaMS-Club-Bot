@@ -59,11 +59,17 @@ def calculate_timeout(score):
 
 
 # Helper function to load data from JSON file
-def load_data():
+default_user_entry = {"score": 0.0, "voting_times": {}}
+def load_data(*member_ids):
     if not os.path.exists(data_file):
-        return {}
+        return {member_id: default_user_entry for member_id in member_ids}
     with open(data_file, 'r') as file:
-        return json.load(file)
+        data = json.load(file)
+        for member_id in member_ids:
+            if member_id not in data:
+                data[member_id] = default_user_entry
+        return data
+
 
 
 # Helper function to save data to JSON file
@@ -72,17 +78,41 @@ def save_data(data):
         json.dump(data, file, indent=4)
 
 
+async def set_respect_role(guild: discord.Interaction.guild, member: discord.Member, score: float, total_members = None):
+    disrespectful_role: discord.Role = discord.utils.get(guild.roles, name="Disrespectful :(")
+    respectful_role: discord.Role = discord.utils.get(guild.roles, name="Respectful :)")
+
+    if disrespectful_role is None or respectful_role is None:
+        print("The 'Disrespectful :(' or 'Respectful :)' role does not exist.")
+        return
+
+    if score > 1.0:
+        if respectful_role in member.roles:
+            await member.remove_roles(respectful_role)
+            await member.add_roles(disrespectful_role)
+            print(f"{member.display_name} has been downgraded to 'Disrespectful :('.")
+    else:
+        if not total_members:
+            total_members = sum(not member.bot for member in guild.members)
+        if score < min(-5.0, 0.1 * total_members):
+            if respectful_role in member.roles:
+                await member.remove_roles(respectful_role)
+                await member.add_roles(disrespectful_role)
+                print(f"{member.display_name} has been downgraded to 'Disrespectful :('.")
+        else:
+            if disrespectful_role in member.roles:
+                await member.remove_roles(disrespectful_role)
+                await member.add_roles(respectful_role)
+                print(f"{member.display_name} has been upgraded to 'Respectful :)'.")
+    return
+
+
 # Vote function for both slash and regular commands
 async def vote(ctx: discord.Interaction, target: discord.User, action: str):
     assert action in ["upvote", "downvote"]
     user_id = str(ctx.user.id)
     target_id = str(target.id)
-    data = load_data()
-
-    if user_id not in data:
-        data[user_id] = {'voting_times': {}, "score": 0.0}
-    if target_id not in data:
-        data[target_id] = {'voting_times': {}, "score": 0.0}
+    data = load_data(user_id, target_id)
 
     if target_id not in data[user_id]['voting_times'] or datetime.datetime.now().timestamp() - data[user_id]["voting_times"][target_id] > COOLDOWN_DURATION:
         if action == 'upvote':
@@ -90,13 +120,7 @@ async def vote(ctx: discord.Interaction, target: discord.User, action: str):
             if data[target_id]["score"] > 1.0:
                 target_member = ctx.guild.get_member(target.id)
                 if target_member:
-                    # Check if the member has the "Disrespectful :(" role
-                    disrespectful_role = discord.utils.get(ctx.guild.roles, name="Disrespectful :(")
-                    respectful_role = discord.utils.get(ctx.guild.roles, name="Respectful :)")
-                    if disrespectful_role in target_member.roles:
-                        await target_member.remove_roles(disrespectful_role)
-                        await target_member.add_roles(respectful_role)
-                        print(f"{target_member.display_name} has been upgraded to 'Respectful :)'.")
+                    await set_respect_role(ctx.guild, target_member, data[target_id]["score"])
         else:
             if data[user_id]["score"] > 10.0:
                 data[target_id]["score"] = min(data[target_id]["score"] / 2.0, data[target_id]["score"] - 1.0)
@@ -106,13 +130,7 @@ async def vote(ctx: discord.Interaction, target: discord.User, action: str):
             if data[target_id]["score"] < min(-5.0, 0.1 * total_members):
                 target_member = ctx.guild.get_member(target.id)  # Convert User to Member
                 if target_member:  # Check if the member exists in the guild
-                    # Check if the member has the "Respectful :)" role
-                    disrespectful_role = discord.utils.get(ctx.guild.roles, name="Disrespectful :(")
-                    respectful_role = discord.utils.get(ctx.guild.roles, name="Respectful :)")
-                    if respectful_role in target_member.roles:
-                        await target_member.remove_roles(respectful_role)
-                        await target_member.add_roles(disrespectful_role)
-                        print(f"{target_member.display_name} has been downgraded to 'Disrespectful :('.")
+                    await set_respect_role(ctx.guild, target_member, data[target_id]["score"], total_members)
                     await timeout_user(target_member, calculate_timeout((-data[user_id]["score"]) / total_members))
         data[user_id]["voting_times"][target_id] = datetime.datetime.now().timestamp()
     else:
@@ -125,7 +143,12 @@ async def vote(ctx: discord.Interaction, target: discord.User, action: str):
 
     save_data(data)
 
-    await ctx.response.send_message(f"Thank you for your feedback, {ctx.user.mention}!")
+    await ctx.response().send_message(f"Thank you for your feedback, {ctx.user.mention}!", ephemeral=True)
+    # Send an ephemeral message to the user who was upvoted or downvoted
+    if action == 'upvote':
+        await target.send(f"You have received an upvote from {ctx.user.display_name}.")
+    else:
+        await target.send(f"You have received a downvote from {ctx.user.display_name}.")
 
 
 # Define slash commands using the bot's built-in tree
@@ -163,25 +186,16 @@ async def on_member_join(member):
         await member.send("Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. Thanks!")
     except Exception as e:
         print(f"Failed to send DM to {member.display_name}: {e}")
+    data = load_data()
+    if not member.id in data:
+        data[member.id] = default_user_entry
+        save_data(data)
 
-    # Fetch the "Respectful :)" role
-    respectful_role = discord.utils.get(member.guild.roles, name="Respectful :)")
-
-    # Check if the role exists
-    if respectful_role is None:
-        print("The 'Respectful :)' role does not exist.")
-        return
-
-    # Assign the role to the new member
-    try:
-        await member.add_roles(respectful_role)
-        print(f"Gave 'Respectful :)' role to {member.display_name}.")
-    except Exception as e:
-        print(f"Failed to add role to {member.display_name}: {e}")
+    await set_respect_role(member.guild, member, data[member.id]["score"])
 
 
 # Define the signal handler function
-def signal_handler(sig, frame):
+def signal_handler(sig, frame) -> None:
     print('SIGTERM received. Gracefully shutting down the bot.')
     # Perform any necessary cleanup here
     bot.close()  # Gracefully close the Discord bot connection
