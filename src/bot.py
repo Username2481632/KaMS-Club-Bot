@@ -108,7 +108,7 @@ async def set_respect_role(guild: discord.Interaction.guild, member: discord.Mem
 
 
 # Vote function for both slash and regular commands
-async def vote(ctx: discord.Interaction, target: discord.User, action: str):
+async def vote(ctx: discord.interaction.Interaction, target: discord.User, action: str):
     assert action in ["upvote", "downvote"]
     user_id = str(ctx.user.id)
     target_id = str(target.id)
@@ -143,7 +143,8 @@ async def vote(ctx: discord.Interaction, target: discord.User, action: str):
 
     save_data(data)
 
-    await ctx.response().send_message(f"Thank you for your feedback, {ctx.user.mention}!", ephemeral=True)
+    # noinspection PyUnresolvedReferences
+    await ctx.response.send_message(f"Thank you for your feedback, {ctx.user.mention}!", ephemeral=True)
     # Send an ephemeral message to the user who was upvoted or downvoted
     if action == 'upvote':
         await target.send(f"You have received an upvote from {ctx.user.display_name}.")
