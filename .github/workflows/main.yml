@@ -12,14 +12,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get changed files
-        id: changed-files
-        uses: tj-actions/changed-files@v35
-        with:
-          path: "src"
-          sha: ${{ github.event.before }}
-          separator: ","
-
       - name: Kill existing bot.py process
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -36,8 +28,8 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          source: ${{ steps.changed-files.outputs.all_changed_files }}
-          target: "~/KaMS-Club-Bot/src/"
+          source: "src/"
+          target: "~/KaMS-Club-Bot/src"
           rm: true
           strip_components: 1
 
@@ -57,4 +49,4 @@ jobs:
             pip install --upgrade pip
             pip install -r <(curl -sL "https://raw.githubusercontent.com/${{ github.repository }}/main/requirements.txt")
             export DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}"
-            nohup python3 ./src/bot.py > ./bot.log 2>&1 &
+            nohup python3 src/bot.py > ./bot.log 2>&1 &
