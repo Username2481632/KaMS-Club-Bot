@@ -42,6 +42,7 @@ jobs:
           script: |
             cd ~/KaMS-Club-Bot/src
             if [ ! -d "venv" ]; then
+              echo "creating new venv"
               python3 -m venv venv
             fi
             source venv/bin/activate
