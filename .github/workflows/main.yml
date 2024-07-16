@@ -30,7 +30,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           source: "src/"  # Source directory of files to copy
           target: "~/KaMS-Club-Bot/src/"  # Target directory on Raspberry Pi
-          rm: true
+          overwrite: true
           strip-components: 1
 
       - name: Install dependencies on Raspberry Pi and run bot.py
