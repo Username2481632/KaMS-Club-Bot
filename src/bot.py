@@ -1,13 +1,30 @@
 import datetime
 import json
+import math
 import os
 import signal
 import sys
+from decimal import Decimal
+
+import aiocron
 import discord
 import numpy as np
 from discord.ext import commands
 from dotenv import load_dotenv
+from scipy.optimize import OptimizeResult
 from scipy.optimize import least_squares
+
+# Parameters
+MEMBER_CREDITS: float = 2.0
+JUSTICE_CREDITS: float = 3.0
+GUILD_ID: int = 1201368154174144602
+JUSTICE_COUNT: int = 5
+JUSTICE_CHANNEL_NAME: str = "justices"
+JUSTICE_CHANNEL_CATEGORY: str = "Information"
+TIMEOUT_THRESHOLD: float = -0.75
+TIMEOUT_DURATION_OUTLINE: dict[float, float] = {0.75: 2.0, 1.0: 10080.0}  # Downvotes: Timeout duration (minutes)
+CREDIT_THRESHOLD: float = 1.0  # Deep score threshold above which a member receives full credits
+MIN_CREDITS: float = 0.875  # Number of credits given to members under the CREDIT_THRESHOLD
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,190 +34,261 @@ TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 
 # Initialize the bot with the necessary intents
 intents = discord.Intents.default()
-intents.members = True  # Enable the members intent
+intents.members = True
 intents.message_content = True
 intents.guilds = True
 bot = commands.Bot(command_prefix='/', intents=intents)
 
 # Path to the data file
-data_file = '../data.json'
-
-# Cooldown duration (24 hours in seconds)
-COOLDOWN_DURATION = 24 * 60 * 60
-
-# Timeout duration function
-desired_points = {0.1: 2, 1: 10080}
+data_file: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data.json"))
 
 
 # Define the function to fit
-def fit_function(x, L, k):
-    return L / (1 + np.exp(-k * (x - 0.5)))
+def fit_function(x: np.ndarray, l_param: float, k: float) -> np.ndarray:
+    return l_param / (1 + np.exp(-k * (x - 0.5)))
 
 
 # Define the cost function for least_squares
-def cost_function(params, local_x_data, local_y_data):
+def cost_function(params: list[float], local_x_data: np.ndarray, local_y_data: np.ndarray) -> np.ndarray:
     return fit_function(local_x_data, *params) - local_y_data
 
 
 # Convert desired_points dictionary to numpy arrays
-x_data = np.array(list(desired_points.keys()))
-y_data = np.array(list(desired_points.values()))
+x_data: np.ndarray = np.array(list(TIMEOUT_DURATION_OUTLINE.keys()))
+y_data: np.ndarray = np.array(list(TIMEOUT_DURATION_OUTLINE.values()))
 
 # Use least_squares to find the best parameters
-result = least_squares(cost_function, [1, 1], args=(x_data, y_data))
+result: OptimizeResult = least_squares(cost_function, [1, 1], args=(x_data, y_data))
 
 # Extract the optimal values of L and k
+L_opt: float
+k_opt: float
 L_opt, k_opt = result.x
 
 
 # Function to calculate timeout, using the original y_data values
-def calculate_timeout(score):
-    return fit_function(score, L_opt, k_opt)
+def calculate_timeout(score: float) -> float:
+    return float(fit_function(np.array([-score]), L_opt, k_opt)[0])
 
 
 # Helper function to load data from JSON file
-default_user_entry = {"score": 0.0, "voting_times": {}}
-def load_data(*member_ids):
+default_user_entry: dict[str, str | float] = {"shallow_score": 0.0, "deep_score": 0.0, "credits": MEMBER_CREDITS}
+
+DataType = dict[str, dict[str, float]]
+
+
+def load_data(*member_ids: str) -> DataType:
     if not os.path.exists(data_file):
         return {member_id: default_user_entry for member_id in member_ids}
     with open(data_file, 'r') as file:
-        data = json.load(file)
+        data: DataType = json.load(file)
         for member_id in member_ids:
             if member_id not in data:
                 data[member_id] = default_user_entry
         return data
 
 
-
 # Helper function to save data to JSON file
-def save_data(data):
+def save_data(data: DataType) -> None:
     with open(data_file, 'w') as file:
         json.dump(data, file, indent=4)
 
 
-async def set_respect_role(guild: discord.Interaction.guild, member: discord.Member, score: float, total_members = None):
-    disrespectful_role: discord.Role = discord.utils.get(guild.roles, name="Disrespectful :(")
-    respectful_role: discord.Role = discord.utils.get(guild.roles, name="Respectful :)")
+async def set_respect_role(guild: discord.Guild, member: discord.Member, score: float) -> None:
+    disrespectful_role: discord.Role | None = discord.utils.get(guild.roles, name="Disrespectful :(")
+    respectful_role: discord.Role | None = discord.utils.get(guild.roles, name="Respectful :)")
 
     if disrespectful_role is None or respectful_role is None:
         print("The 'Disrespectful :(' or 'Respectful :)' role does not exist.")
         return
 
-    if score > 1.0:
+    if score > 0:
+        if disrespectful_role in member.roles:
+            await member.remove_roles(disrespectful_role)
+            await member.add_roles(respectful_role)
+            print(f"{member.display_name} has been upgraded to 'Respectful :)'.")
+    elif score < min(-1.0, -0.01 * sum(not memb.bot for memb in guild.members)):
         if respectful_role in member.roles:
             await member.remove_roles(respectful_role)
             await member.add_roles(disrespectful_role)
             print(f"{member.display_name} has been downgraded to 'Disrespectful :('.")
-    else:
-        if not total_members:
-            total_members = sum(not member.bot for member in guild.members)
-        if score < min(-5.0, 0.1 * total_members):
-            if respectful_role in member.roles:
-                await member.remove_roles(respectful_role)
-                await member.add_roles(disrespectful_role)
-                print(f"{member.display_name} has been downgraded to 'Disrespectful :('.")
+
+
+@bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
+async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float):
+    user_id: str = str(interaction.user.id)
+    target_id: str = str(target.id)
+    data: DataType = load_data(user_id, target_id)
+    if -1.0 <= severity <= 1.0:
+        if abs(severity) > data[user_id]["credits"]:
+            # noinspection PyUnresolvedReferences
+            await interaction.response.send_message(f"Insufficient credits! You only have {data[user_id]['credits']} credits remaining.", ephemeral=True, delete_after=10)
+            print(f"Insufficient credits for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
+            return
         else:
-            if disrespectful_role in member.roles:
-                await member.remove_roles(disrespectful_role)
-                await member.add_roles(respectful_role)
-                print(f"{member.display_name} has been upgraded to 'Respectful :)'.")
-    return
-
-
-# Vote function for both slash and regular commands
-async def vote(ctx: discord.Interaction, target: discord.User, action: str):
-    assert action in ["upvote", "downvote"]
-    user_id = str(ctx.user.id)
-    target_id = str(target.id)
-    data = load_data(user_id, target_id)
-
-    if target_id not in data[user_id]['voting_times'] or datetime.datetime.now().timestamp() - data[user_id]["voting_times"][target_id] > COOLDOWN_DURATION:
-        if action == 'upvote':
-            data[target_id]["score"] += 1.0
-            if data[target_id]["score"] > 1.0:
-                target_member = ctx.guild.get_member(target.id)
-                if target_member:
-                    await set_respect_role(ctx.guild, target_member, data[target_id]["score"])
-        else:
-            if data[user_id]["score"] > 10.0:
-                data[target_id]["score"] = min(data[target_id]["score"] / 2.0, data[target_id]["score"] - 1.0)
-            else:
-                data[target_id]["score"] -= 1.0
-            total_members = sum(not member.bot for member in ctx.guild.members)
-            if data[target_id]["score"] < min(-5.0, 0.1 * total_members):
-                target_member = ctx.guild.get_member(target.id)  # Convert User to Member
-                if target_member:  # Check if the member exists in the guild
-                    await set_respect_role(ctx.guild, target_member, data[target_id]["score"], total_members)
-                    await timeout_user(target_member, calculate_timeout((-data[user_id]["score"]) / total_members))
-        data[user_id]["voting_times"][target_id] = datetime.datetime.now().timestamp()
+            data[user_id]["credits"] = float(Decimal(str(data[user_id]["credits"])) - Decimal(str(abs(severity))))
     else:
-        remaining_time = COOLDOWN_DURATION - (datetime.datetime.now().timestamp() - data[user_id]["voting_times"][target_id])
-        remaining_hours = int(remaining_time // 3600)
-        remaining_minutes = int((remaining_time % 3600) // 60)
-        remaining_seconds = int(remaining_time % 60)
-        remaining_formatted = f"{remaining_hours:02}:{remaining_minutes:02}:{remaining_seconds:02}"
-        print(f"Cooldown prevented voting from {ctx.user.display_name} for {target.display_name}. Cooldown remaining: {remaining_formatted}")
+        # noinspection PyUnresolvedReferences
+        await interaction.response.send_message("Invalid severity value. Please use a value between -1 and 1.", ephemeral=True)
+        print(f"Invalid severity value for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
+        return
+
+    data[target_id]["shallow_score"] = float(Decimal(str(data[target_id]["shallow_score"])) + Decimal(str(severity)))
+    target_member: discord.Member | None = interaction.guild.get_member(target.id)
+    if target_member is not None:
+        await set_respect_role(interaction.guild, target_member, data[target_id]["shallow_score"])
+        if data[target_id]["shallow_score"] < (-TIMEOUT_THRESHOLD + 1.0):
+            await timeout_user(target_member, calculate_timeout(data[target_id]["shallow_score"]))
 
     save_data(data)
 
-    # noinspection PyUnresolvedReferences
-    await ctx.response.send_message(f"Thank you for your feedback!")
+    # Send a message publicly
+    public_message = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}."
+    # async for previous_message in interaction.channel.history(limit=1):
+    #     if previous_message.author == bot.user:
+    #         await previous_message.edit(content=f"{previous_message.content}\n{public_message}")
+    #         break
+    # else:
+    await interaction.channel.send(public_message)
+
+    try:
+        # noinspection PyUnresolvedReferences
+        await interaction.response.send_message(f"Vote successful! You have {data[user_id]['credits']} credits remaining.", ephemeral=True, delete_after=10)
+    except discord.errors.NotFound as e:
+        print(f"Failed to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long. Error \"{e}\"")
 
 
-# Define slash commands using the bot's built-in tree
-@bot.tree.command(name="upvote", description="Upvote a user.")
-async def slash_upvote(interaction: discord.Interaction, user: discord.User):
-    await vote(interaction, user, 'upvote')
-
-
-@bot.tree.command(name="downvote", description="Downvote a user.")
-async def slash_downvote(interaction: discord.Interaction, user: discord.User):
-    await vote(interaction, user, 'downvote')
-
-
-async def timeout_user(member: discord.Member, minutes: float):
-    duration = datetime.timedelta(minutes=minutes)
+async def timeout_user(member: discord.Member, minutes: float) -> None:
+    duration: datetime.timedelta = datetime.timedelta(minutes=minutes)
+    until: datetime.datetime = discord.utils.utcnow() + duration
     # If member is not currently timed out, send them a DM
-    if not member.timed_out_until:
+    if not member.timed_out_until and member.dm_channel is not None and minutes > 0.25:
         try:
             await member.send(f"You have been timed out for {minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a moderator.")
         except Exception as e:
             print(f"Failed to send DM to {member.display_name}: {e}")
-    await member.edit(timed_out_until=discord.utils.utcnow() + duration)
-    print(f"{member.display_name} has been timed out for {minutes} minutes.")
+    # if until > member.timed_out_until:
+    try:
+        await member.edit(timed_out_until=until)
+        print(f"{member.display_name} has been timed out for {minutes} minutes.")
+    except discord.errors.Forbidden as e:
+        print(f"Failed to timeout user \"{member.display_name}\" (id={member.id}), {e}")
 
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync(guild=discord.Object(id=1201368154174144602))  # Replace with your guild ID
+    print("Bot is ready, starting to sync commands...")
+    await bot.tree.sync()
     print("Slash commands synced!")
     print(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
 
 
 @bot.event
-async def on_member_join(member):
+async def on_member_join(member: discord.Member):
     # Ensure the member is not a bot
     if member.bot:
         return
-
+    member_id: str = str(member.id)
     # DM the member
     try:
         await member.send("Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. Thanks!")
     except Exception as e:
         print(f"Failed to send DM to {member.display_name}: {e}")
-    data = load_data()
+    data: DataType = load_data()
     if not member.id in data:
-        data[member.id] = default_user_entry
+        data[member_id] = default_user_entry
         save_data(data)
+    else:
+        justice_ids: list[str] = calculate_justices(data)
+        await set_justice_role(member, justice_ids)
 
-    await set_respect_role(member.guild, member, data[member.id]["score"])
+    await set_respect_role(member.guild, member, data[member_id]["shallow_score"])
 
 
-# Define the signal handler function
-def signal_handler(sig, frame) -> None:
+async def set_justice_role(member: discord.Member, justice_ids: list[str]) -> None:
+    # If the Justice role does not exist, log the error and timestamp then return
+    if discord.utils.get(member.guild.roles, name="Justice") is None:
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR 1: The 'Justice' role does not exist in guild \"{member.guild.name}\".")
+        return
+    if member.id in justice_ids and not any(role.name == "Justice" for role in member.roles):
+        await member.add_roles(discord.utils.get(member.guild.roles, name="Justice"))
+    elif member.id not in justice_ids and any(role.name == "Justice" for role in member.roles):
+        await member.remove_roles(discord.utils.get(member.guild.roles, name="Justice"))
+
+
+def calculate_justices(data: dict[str, dict[str, str | float]]) -> list[str]:
+    if len(data.keys()) < JUSTICE_COUNT * 5:
+        return []
+    return sorted(data.keys(), key=lambda x: data[x]["deep_score"], reverse=True)[:JUSTICE_COUNT]
+
+
+@aiocron.crontab('0 0 * * *')
+async def day_change() -> None:
+    data: DataType = load_data()
+    # Backup data
+    if not os.path.exists("../data_backup"):
+        os.makedirs("../data_backup")
+    with open(f"../data_backup/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json", 'w') as file:
+        json.dump(data, file, indent=4)
+
+    guild: discord.Guild | None = bot.get_guild(GUILD_ID)
+    if guild is None:
+        print("ERROR 2: Guild not found.")
+        return
+    member_count: int = sum(not member.bot for member in bot.get_guild(GUILD_ID).members)
+    for member_id in data:
+        if data[member_id]["shallow_score"] > 0:
+            data[member_id]["deep_score"] += max(0.0, math.log((data[member_id]["shallow_score"] + 0.05), member_count) + 0.7)
+            data[member_id]["shallow_score"] = 0
+        elif data[member_id]["shallow_score"] < 0:
+            data[member_id]["deep_score"] += data[member_id]["shallow_score"]
+        elif data[member_id]["deep_score"] > 0.1:
+            data[member_id]["deep_score"] -= 0.1
+    justice_ids: list[str] = calculate_justices(data)
+    for member_id in data:
+        member: discord.Member | None = guild.get_member(int(member_id))
+
+        if member is not None:
+            await set_justice_role(member, justice_ids)
+        if data[member_id]["deep_score"] < CREDIT_THRESHOLD:
+            data[member_id]["credits"] = MIN_CREDITS
+        else:
+            data[member_id]["credits"] = MEMBER_CREDITS
+    # Make a leaderboard of the five justices
+    message_content: str = ""
+    i: int
+    for i, justice_id in enumerate(justice_ids):
+        justice = bot.get_user(int(justice_id))
+        data[justice_id]["credits"] += (JUSTICE_COUNT - i) * 0.5
+        message_content += f"{i + 1}. {justice.display_name}\n"
+    if not message_content:
+        message_content = "No justices have been determined yet."
+
+    justice_channel_category: discord.CategoryChannel | None = discord.utils.get(guild.categories, name=JUSTICE_CHANNEL_CATEGORY)
+    if justice_channel_category is None:
+        justice_channel_category = await guild.create_category(JUSTICE_CHANNEL_CATEGORY)
+    justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
+    if justice_channel is None:
+        justice_channel = await guild.create_text_channel(JUSTICE_CHANNEL_NAME, category=justice_channel_category)
+    else:
+        async for message in justice_channel.history():
+            await message.delete()
+    await justice_channel.send(message_content)
+
+    save_data(data)
+
+    for channel in guild.text_channels:
+        if channel.name == "polls":
+            async for message in channel.history(after=datetime.datetime(2024, 7, 21)):
+                if message.poll is None and not message.pinned and not message.content.startswith("[POLL]"):
+                    await message.delete()
+
+
+# noinspection PyUnusedLocal
+async def signal_handler(sig, frame) -> None:
     print('SIGTERM received. Gracefully shutting down the bot.')
     # Perform any necessary cleanup here
-    bot.close()  # Gracefully close the Discord bot connection
+    await bot.close()  # Gracefully close the Discord bot connection
     sys.exit(0)  # Exit the script
 
 
