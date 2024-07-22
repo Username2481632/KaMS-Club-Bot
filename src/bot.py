@@ -25,6 +25,11 @@ TIMEOUT_THRESHOLD: float = -0.75
 TIMEOUT_DURATION_OUTLINE: dict[float, float] = {0.75: 2.0, 1.0: 10080.0}  # Downvotes: Timeout duration (minutes)
 CREDIT_THRESHOLD: float = 1.0  # Deep score threshold above which a member receives full credits
 MIN_CREDITS: float = 0.875  # Number of credits given to members under the CREDIT_THRESHOLD
+REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1261372426382737610, 1261371054161662044},
+                                  {1256626845970075779, 1256627378763993189}]  # Ids of roles that are required to access the server
+MISSING_ROLE_MESSAGE = ("Hi there. It seems like you're missing some roles, which is why you've been temporarily timed out. No worries, though! To regain access to the server, just visit the <id:customize> tab to assign yourself the "
+                        "necessary roles. If you have any questions or need assistance, feel free to reach out to a moderator. We're here to help!")
+ROLE_RESTORATION_MESSAGE = "You have been untimed out due to acquiring the necessary roles. Welcome back!"
 
 # Load environment variables from .env file
 load_dotenv()
@@ -116,6 +121,11 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
 
 @bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
 async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float):
+    # Make sure this isn't a dm
+    if interaction.guild is None:
+        # noinspection PyUnresolvedReferences
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+        return
     user_id: str = str(interaction.user.id)
     target_id: str = str(target.id)
     data: DataType = load_data(user_id, target_id)
@@ -138,7 +148,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
     if target_member is not None:
         await set_respect_role(interaction.guild, target_member, data[target_id]["shallow_score"])
         if data[target_id]["shallow_score"] < (-TIMEOUT_THRESHOLD + 1.0):
-            await timeout_user(target_member, calculate_timeout(data[target_id]["shallow_score"]))
+            await timeout_member(target_member, calculate_timeout(data[target_id]["shallow_score"]))
 
     save_data(data)
 
@@ -158,7 +168,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
         print(f"Failed to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long. Error \"{e}\"")
 
 
-async def timeout_user(member: discord.Member, minutes: float) -> None:
+async def timeout_member(member: discord.Member, minutes: float) -> None:
     duration: datetime.timedelta = datetime.timedelta(minutes=minutes)
     until: datetime.datetime = discord.utils.utcnow() + duration
     # If member is not currently timed out, send them a DM
@@ -254,6 +264,23 @@ async def day_change() -> None:
             data[member_id]["credits"] = MIN_CREDITS
         else:
             data[member_id]["credits"] = MEMBER_CREDITS
+
+        # Timeout members that are missing required roles
+        if not member.bot:
+            member_role_ids: set[int] = set(rl.id for rl in member.roles)
+            if not all(member_role_ids & role_category for role_category in REQUIRED_ROLES):
+                member.timed_out_until = max(member.timed_out_until, discord.utils.utcnow() + datetime.timedelta(days=2))
+                print(f"{member.display_name} has been timed out for 2 days due to missing required roles.")
+                if member.dm_channel is not None:
+                    message: discord.Message
+                    async for message in member.dm_channel.history(limit=100):
+                        if message.author == bot.user and message.content == MISSING_ROLE_MESSAGE:
+                            break
+                    try:
+                        await member.send(MISSING_ROLE_MESSAGE)
+                    except Exception as e:
+                        print(f"ERROR 3: Failed to send DM to {member.display_name} - {e}")
+
     # Make a leaderboard of the five justices
     message_content: str = ""
     i: int
@@ -277,11 +304,24 @@ async def day_change() -> None:
 
     save_data(data)
 
+    # Cleanup polls channel
     for channel in guild.text_channels:
         if channel.name == "polls":
             async for message in channel.history(after=datetime.datetime(2024, 7, 21)):
                 if message.poll is None and not message.pinned and not message.content.startswith("[POLL]"):
                     await message.delete()
+
+
+# When a user updates their roles, check if they have the required roles
+@bot.event
+async def on_member_update(before: discord.Member, after: discord.Member):
+    if before.roles == after.roles:
+        return
+    if not all(set(rl.id for rl in before.roles) & role_category for role_category in REQUIRED_ROLES) and all(set(rl.id for rl in after.roles) & role_category for role_category in REQUIRED_ROLES):
+        after.timed_out_until = None
+        print(f"{after.display_name} has been untimed out due to acquiring the necessary roles.")
+        if after.dm_channel is not None:
+            await after.send(ROLE_RESTORATION_MESSAGE)
 
 
 # noinspection PyUnusedLocal
