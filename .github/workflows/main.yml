@@ -41,7 +41,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           source: "upgrade_script.sh"
           target: "~/KaMS-Club-Bot/"
-          rm: true
+          overwrite: true
 
       - name: Run & delete upgrade script
         uses: appleboy/ssh-action@v1.0.3
