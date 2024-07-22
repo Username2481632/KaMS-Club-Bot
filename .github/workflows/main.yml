@@ -33,6 +33,15 @@ jobs:
           rm: true
           strip_components: 1
 
+      - name: Run upgrade script
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.PI_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: upgrade_script.sh
+
       - name: Install dependencies on Raspberry Pi and run bot.py
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -49,4 +58,4 @@ jobs:
             pip install --upgrade pip
             pip install -r <(curl -sL "https://raw.githubusercontent.com/${{ github.repository }}/main/requirements.txt")
             export DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}"
-            nohup python3 src/bot.py > ./bot.log 2>&1 &
+            nohup python3 src/bot.py >> ./bot.log 2>&1 &
