@@ -32,15 +32,29 @@ jobs:
           target: "~/KaMS-Club-Bot/src/"
           rm: true
           strip_components: 1
+      - name: Copy over upgrade script
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.PI_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "upgrade_script.sh"
+          target: "~/KaMS-Club-Bot/"
+          rm: true
 
-      - name: Run upgrade script
+      - name: Run & delete upgrade script
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          script: upgrade_script.sh
+          script: |
+            cd ~/KaMS-Club-Bot
+            chmod +x upgrade_script.sh
+            ./upgrade_script.sh
+            rm ~/KaMS-Club-Bot/upgrade_script.sh
 
       - name: Install dependencies on Raspberry Pi and run bot.py
         uses: appleboy/ssh-action@v1.0.3
