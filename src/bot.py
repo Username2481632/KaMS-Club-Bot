@@ -126,6 +126,10 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
         # noinspection PyUnresolvedReferences
         await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
+    if severity == 0.0:
+        # noinspection PyUnresolvedReferences
+        await interaction.response.send_message("You cannot vote with a severity of 0.", ephemeral=True)
+        return
     user_id: str = str(interaction.user.id)
     target_id: str = str(target.id)
     data: DataType = load_data(user_id, target_id)
