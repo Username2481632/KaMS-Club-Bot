@@ -40,6 +40,7 @@ jobs:
             echo "SCRIPT_NON_EMPTY=true" >> $GITHUB_ENV
           else
             echo "SCRIPT_NON_EMPTY=false" >> $GITHUB_ENV
+          fi
 
       - name: Copy over upgrade script
         if: env.SCRIPT_NON_EMPTY == 'true'
