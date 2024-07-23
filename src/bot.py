@@ -4,7 +4,6 @@ import json
 import math
 import os
 import signal
-import sys
 from decimal import Decimal
 
 import aiocron
@@ -16,8 +15,7 @@ from scipy.optimize import OptimizeResult
 from scipy.optimize import least_squares
 
 # Parameters
-MEMBER_CREDITS: float = 2.0
-JUSTICE_CREDITS: float = 3.0
+MEMBER_CREDITS: float = 1.5
 GUILD_ID: int = 1201368154174144602
 JUSTICE_COUNT: int = 5
 JUSTICE_CHANNEL_NAME: str = "justices"
@@ -25,7 +23,7 @@ JUSTICE_CHANNEL_CATEGORY: str = "Information"
 TIMEOUT_THRESHOLD: float = -0.75
 TIMEOUT_DURATION_OUTLINE: dict[float, float] = {0.75: 2.0, 1.0: 10080.0}  # Downvotes: Timeout duration (minutes)
 CREDIT_THRESHOLD: float = 1.0  # Deep score threshold above which a member receives full credits
-MIN_CREDITS: float = 0.875  # Number of credits given to members under the CREDIT_THRESHOLD
+MIN_CREDITS: float = 0.75  # Number of credits given to members under the CREDIT_THRESHOLD
 REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1261372426382737610, 1261371054161662044},
                                   {1256626845970075779, 1256627378763993189}]  # Ids of roles that are required to access the server
 MISSING_ROLE_MESSAGE = ("Hi there. It seems like you're missing some roles, which is why you've been temporarily timed out. No worries, though! To regain access to the server, just visit the <id:customize> tab to assign yourself the "
@@ -333,11 +331,12 @@ async def shutdown():
     print('SIGTERM received. Gracefully shutting down the bot.')
     # Perform any necessary cleanup here
     await bot.close()  # Gracefully close the Discord bot connection
-    # No sys.exit() here; let the bot.close() complete the shutdown
+
 
 def signal_handler(sig, frame):
     loop = asyncio.get_event_loop()
     loop.create_task(shutdown())
+
 
 # Register the signal handler for SIGTERM
 signal.signal(signal.SIGTERM, signal_handler)
