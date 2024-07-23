@@ -33,7 +33,16 @@ jobs:
           target: "~/KaMS-Club-Bot/src/"
           rm: true
           strip_components: 1
+      - name: Check if upgrade script is non-empty
+        id: check_script
+        run: |
+          if [ -s upgrade_script.sh ]; then
+            echo "SCRIPT_NON_EMPTY=true" >> $GITHUB_ENV
+          else
+            echo "SCRIPT_NON_EMPTY=false" >> $GITHUB_ENV
+
       - name: Copy over upgrade script
+        if: env.SCRIPT_NON_EMPTY == 'true'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.HOST }}
@@ -45,19 +54,7 @@ jobs:
           overwrite: true
 
       - name: Run & delete upgrade script
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.PI_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            cd ~/KaMS-Club-Bot
-            chmod +x upgrade_script.sh
-            ./upgrade_script.sh
-            rm ~/KaMS-Club-Bot/upgrade_script.sh
-
-      - name: Install dependencies on Raspberry Pi and run bot.py
+        if: env.SCRIPT_NON_EMPTY == 'true'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.HOST }}
