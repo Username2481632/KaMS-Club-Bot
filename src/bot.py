@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import math
@@ -328,13 +329,15 @@ async def on_member_update(before: discord.Member, after: discord.Member):
             await after.send(ROLE_RESTORATION_MESSAGE)
 
 
-# noinspection PyUnusedLocal
-async def signal_handler(sig, frame) -> None:
+async def shutdown():
     print('SIGTERM received. Gracefully shutting down the bot.')
     # Perform any necessary cleanup here
     await bot.close()  # Gracefully close the Discord bot connection
-    sys.exit(0)  # Exit the script
+    # No sys.exit() here; let the bot.close() complete the shutdown
 
+def signal_handler(sig, frame):
+    loop = asyncio.get_event_loop()
+    loop.create_task(shutdown())
 
 # Register the signal handler for SIGTERM
 signal.signal(signal.SIGTERM, signal_handler)
