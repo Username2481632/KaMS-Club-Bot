@@ -76,7 +76,7 @@ def calculate_timeout(score: float) -> float:
 
 
 # Helper function to load data from JSON file
-default_user_entry: dict[str, str | float] = {"shallow_score": 0.0, "deep_score": 0.0, "credits": MEMBER_CREDITS}
+default_user_entry: dict[str, str | float] = {"shallow_score": 0.0, "deep_score": 0.0, "credits": MIN_CREDITS}
 
 DataType = dict[str, dict[str, float]]
 
