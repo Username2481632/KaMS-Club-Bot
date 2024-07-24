@@ -23,7 +23,7 @@ JUSTICE_CHANNEL_NAME: str = "justices"
 JUSTICE_CHANNEL_CATEGORY: str = "Information"
 TIMEOUT_THRESHOLD: float = -0.5  # If a member's shallow score falls below this value, member gets timed out
 TIMEOUT_NOTIFICATION_THRESHOLD: datetime.timedelta = datetime.timedelta(minutes=0.5)  # If a member gets timed out for more than this, member gets notified
-TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0, TIMEOUT_THRESHOLD: TIMEOUT_NOTIFICATION_THRESHOLD, -1.0: 10.0, -2.0: 300.0, -3.0: 10080.0, -4.0: 10080.0}  # Score: Timeout duration (minutes)
+TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0, TIMEOUT_THRESHOLD: TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds() / 60.0, -1.0: 10.0, -2.0: 300.0, -3.0: 10080.0, -4.0: 10080.0}  # Score: Timeout duration (minutes)
 CREDIT_THRESHOLD: float = 1.0  # Deep score threshold above which a member receives full credits
 MIN_CREDITS: float = 0.75  # Number of credits given to members under the CREDIT_THRESHOLD
 REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1261372426382737610, 1261371054161662044},
@@ -193,9 +193,9 @@ async def dm_member(member: discord.Member, message: str) -> None:
 
 async def timeout_member(member: discord.Member, minutes: float, data: DataType) -> None:
     new_duration: datetime.timedelta = datetime.timedelta(minutes=minutes)
-    old_duration: datetime.timedelta = member.timed_out_until - datetime.datetime.utcnow() if member.timed_out_until else datetime.timedelta(0)
+    old_duration: datetime.timedelta = member.timed_out_until - discord.utils.utcnow() if member.timed_out_until else datetime.timedelta(0)
     until: datetime.datetime = discord.utils.utcnow() + new_duration
-    if data[str(member.id)]["suspended_timeout"]:
+    if "suspended_timeout" in data[str(member.id)]:
         data[str(member.id)]["suspended_timeout"] = new_duration.total_seconds()
     else:
         try:
