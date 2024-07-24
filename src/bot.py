@@ -277,7 +277,7 @@ async def day_change() -> None:
         elif data[member_id]["shallow_score"] < 0:
             data[member_id]["deep_score"] += data[member_id]["shallow_score"]
         elif data[member_id]["deep_score"] > 0.1:
-            data[member_id]["deep_score"] -= 0.1
+            data[member_id]["deep_score"] -= 0.0078125  # 1/28
     justice_ids: list[str] = calculate_justices(data)
     for member_id in data:
         member: discord.Member | None = guild.get_member(int(member_id))
