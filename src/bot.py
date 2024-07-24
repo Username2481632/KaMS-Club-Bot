@@ -1,17 +1,19 @@
 import asyncio
 import datetime
 import json
+import logging
 import math
 import os
+import shutil
 import signal
 from decimal import Decimal
 
 import aiocron
 import discord
+import numpy as np
 from discord.ext import commands
 from dotenv import load_dotenv
 from scipy.interpolate import interp1d
-import numpy as np
 
 # Parameters
 MEMBER_CREDITS: float = 1.5
@@ -29,6 +31,8 @@ REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 122
 MISSING_ROLE_MESSAGE = ("Hi there. It seems like you're missing some roles, which is why you've been temporarily timed out. No worries, though! To regain access to the server, just visit the <id:customize> tab to assign yourself the "
                         "necessary roles. If you have any questions or need assistance, feel free to reach out to a moderator. We're here to help!")
 ROLE_RESTORATION_MESSAGE = "You have been untimed out due to acquiring the necessary roles. Welcome back!"
+LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -46,7 +50,20 @@ bot = commands.Bot(command_prefix='/', intents=intents)
 # Path to the data file
 data_file: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data.json"))
 
+# Configure logging, excluding discord logs
+logger = logging.getLogger('kams-bot')
+logger.setLevel(logging.INFO)
 
+# Create handlers
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+# Create formatters and add it to handlers
+formatter = logging.Formatter(LOGGING_FORMAT)
+console_handler.setFormatter(formatter)
+
+# Add handlers to the logger
+logger.addHandler(console_handler)
 
 # Extract x and y coordinates from the dictionary
 x_coords: np.ndarray = np.array(list(TIMEOUT_DURATION_OUTLINE.keys()))
@@ -65,14 +82,16 @@ def calculate_timeout(x: float) -> float:
 x_values: np.ndarray = np.linspace(min(x_coords), max(x_coords), 500)
 y_values: np.ndarray = linear_interp(x_values)
 
-
 # Helper function to load data from JSON file
 default_user_entry: dict[str, str | float] = {"shallow_score": 0.0, "deep_score": 0.0, "credits": MIN_CREDITS}
 
 DataType = dict[str, dict[str, float]]
 
+data_lock = asyncio.Lock()
 
-def load_data(*member_ids: str) -> DataType:
+
+async def load_data(*member_ids: str) -> DataType:
+    await data_lock.acquire()
     if not os.path.exists(data_file):
         return {member_id: default_user_entry for member_id in member_ids}
     with open(data_file, 'r') as file:
@@ -87,6 +106,7 @@ def load_data(*member_ids: str) -> DataType:
 def save_data(data: DataType) -> None:
     with open(data_file, 'w') as file:
         json.dump(data, file, indent=4)
+    data_lock.release()
 
 
 async def set_respect_role(guild: discord.Guild, member: discord.Member, score: float) -> None:
@@ -94,19 +114,19 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
     respectful_role: discord.Role | None = discord.utils.get(guild.roles, name="Respectful :)")
 
     if disrespectful_role is None or respectful_role is None:
-        print("The 'Disrespectful :(' or 'Respectful :)' role does not exist.")
+        logger.error("The 'Disrespectful :(' or 'Respectful :)' role does not exist.")
         return
 
     if score > 0:
         if disrespectful_role in member.roles:
             await member.remove_roles(disrespectful_role)
             await member.add_roles(respectful_role)
-            print(f"{member.display_name} has been upgraded to 'Respectful :)'.")
+            logger.info(f"{member.display_name} has been upgraded to 'Respectful :)'.")
     elif score < min(-1.0, -0.01 * sum(not memb.bot for memb in guild.members)):
         if respectful_role in member.roles:
             await member.remove_roles(respectful_role)
             await member.add_roles(disrespectful_role)
-            print(f"{member.display_name} has been downgraded to 'Disrespectful :('.")
+            logger.info(f"{member.display_name} has been downgraded to 'Disrespectful :('.")
 
 
 @bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
@@ -122,19 +142,19 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
         return
     user_id: str = str(interaction.user.id)
     target_id: str = str(target.id)
-    data: DataType = load_data(user_id, target_id)
+    data: DataType = await load_data(user_id, target_id)
     if -1.0 <= severity <= 1.0:
         if abs(severity) > data[user_id]["credits"]:
             # noinspection PyUnresolvedReferences
             await interaction.response.send_message(f"Insufficient credits! You only have {data[user_id]['credits']} credits remaining.", ephemeral=True, delete_after=10)
-            print(f"Insufficient credits for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
+            logger.info(f"Insufficient credits for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
             return
         else:
             data[user_id]["credits"] = float(Decimal(str(data[user_id]["credits"])) - Decimal(str(abs(severity))))
     else:
         # noinspection PyUnresolvedReferences
         await interaction.response.send_message("Invalid severity value. Please use a value between -1 and 1.", ephemeral=True)
-        print(f"Invalid severity value for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
+        logger.info(f"Invalid severity value for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
         return
 
     data[target_id]["shallow_score"] = float(Decimal(str(data[target_id]["shallow_score"])) + Decimal(str(severity)))
@@ -158,33 +178,39 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
     try:
         # noinspection PyUnresolvedReferences
         await interaction.response.send_message(f"Vote successful! You have {data[user_id]['credits']} credits remaining.", ephemeral=True, delete_after=10)
-    except discord.errors.NotFound as e:
-        print(f"Failed to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long. Error \"{e}\"")
+    except discord.errors.NotFound:
+        logger.error(f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long.")
+
+
+async def dm_member(member: discord.Member, message: str) -> None:
+    if member.dm_channel is None:
+        await member.create_dm()
+    try:
+        await member.send(message)
+    except discord.errors.Forbidden:
+        logger.error(f"Forbidden to send message to \"{member.display_name}\" (id={member.id}).")
 
 
 async def timeout_member(member: discord.Member, minutes: float) -> None:
     duration: datetime.timedelta = datetime.timedelta(minutes=minutes)
     until: datetime.datetime = discord.utils.utcnow() + duration
     # If member is not currently timed out, send them a DM
-    if not member.timed_out_until and member.dm_channel is not None and minutes > TIMEOUT_NOTIFICATION_THRESHOLD:
+    if minutes > TIMEOUT_NOTIFICATION_THRESHOLD:
+        if not member.timed_out_until:
+            await dm_member(member, "You have been timed out for {minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a moderator.")
         try:
-            await member.send(f"You have been timed out for {minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a moderator.")
-        except Exception as e:
-            print(f"Failed to send DM to {member.display_name}: {e}")
-    # if until > member.timed_out_until:
-    try:
-        await member.edit(timed_out_until=until)
-        print(f"{member.display_name} has been timed out for {minutes} minutes.")
-    except discord.errors.Forbidden as e:
-        print(f"Failed to timeout user \"{member.display_name}\" (id={member.id}), {e}")
+            await member.edit(timed_out_until=until)
+            logger.info(f"{member.display_name} has been timed out for {minutes} minutes.")
+        except discord.errors.Forbidden:
+            logger.error(f"Forbidden to timeout user \"{member.display_name}\" (id={member.id}).")
 
 
 @bot.event
 async def on_ready():
-    print("Bot is ready, starting to sync commands...")
+    logger.info("Bot is ready, starting to sync commands...")
     await bot.tree.sync()
-    print("Slash commands synced!")
-    print(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
+    logger.info("Slash commands synced!")
+    logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
 
 
 @bot.event
@@ -194,11 +220,9 @@ async def on_member_join(member: discord.Member):
         return
     member_id: str = str(member.id)
     # DM the member
-    try:
-        await member.send("Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. Thanks!")
-    except Exception as e:
-        print(f"Failed to send DM to {member.display_name}: {e}")
-    data: DataType = load_data()
+    await dm_member(member,
+                    "Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. Thanks!")
+    data: DataType = await load_data()
     if not member.id in data:
         data[member_id] = default_user_entry
         save_data(data)
@@ -211,13 +235,14 @@ async def on_member_join(member: discord.Member):
 
 async def set_justice_role(member: discord.Member, justice_ids: list[str]) -> None:
     # If the Justice role does not exist, log the error and timestamp then return
-    if discord.utils.get(member.guild.roles, name="Justice") is None:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR 1: The 'Justice' role does not exist in guild \"{member.guild.name}\".")
+    justice_role: discord.Role | None = discord.utils.get(member.guild.roles, name="Justice")
+    if justice_role is None:
+        logger.error("The 'Justice' role does not exist in guild \"{member.guild.name}\".")
         return
     if member.id in justice_ids and not any(role.name == "Justice" for role in member.roles):
-        await member.add_roles(discord.utils.get(member.guild.roles, name="Justice"))
+        await member.add_roles(justice_role)
     elif member.id not in justice_ids and any(role.name == "Justice" for role in member.roles):
-        await member.remove_roles(discord.utils.get(member.guild.roles, name="Justice"))
+        await member.remove_roles(justice_role)
 
 
 def calculate_justices(data: dict[str, dict[str, str | float]]) -> list[str]:
@@ -228,7 +253,7 @@ def calculate_justices(data: dict[str, dict[str, str | float]]) -> list[str]:
 
 @aiocron.crontab('0 0 * * *')
 async def day_change() -> None:
-    data: DataType = load_data()
+    data: DataType = await load_data()
     # Backup data
     if not os.path.exists("../data_backup"):
         os.makedirs("../data_backup")
@@ -237,7 +262,7 @@ async def day_change() -> None:
 
     guild: discord.Guild | None = bot.get_guild(GUILD_ID)
     if guild is None:
-        print("ERROR 2: Guild not found.")
+        logger.error("Could not find provided guild.")
         return
     member_count: int = sum(not member.bot for member in bot.get_guild(GUILD_ID).members)
     for member_id in data:
@@ -260,20 +285,21 @@ async def day_change() -> None:
             data[member_id]["credits"] = MEMBER_CREDITS
 
         # Timeout members that are missing required roles
-        if not member.bot:
+        if not member.bot and member is not None:
             member_role_ids: set[int] = set(rl.id for rl in member.roles)
             if not all(member_role_ids & role_category for role_category in REQUIRED_ROLES):
                 member.timed_out_until = max(member.timed_out_until, discord.utils.utcnow() + datetime.timedelta(days=2))
-                print(f"{member.display_name} has been timed out for 2 days due to missing required roles.")
-                if member.dm_channel is not None:
-                    message: discord.Message
-                    async for message in member.dm_channel.history(limit=100):
-                        if message.author == bot.user and message.content == MISSING_ROLE_MESSAGE:
-                            break
-                    try:
-                        await member.send(MISSING_ROLE_MESSAGE)
-                    except Exception as e:
-                        print(f"ERROR 3: Failed to send DM to {member.display_name} - {e}")
+                logger.info(f"{member.display_name} (id={member_id}) has been timed out for 2 days due to missing required roles.")
+                if member.dm_channel is None:
+                    await member.create_dm()
+                message: discord.Message
+                async for message in member.dm_channel.history(limit=100):
+                    if message.author == bot.user and message.content == MISSING_ROLE_MESSAGE:
+                        break
+                try:
+                    await member.send(MISSING_ROLE_MESSAGE)
+                except discord.errors.Forbidden:
+                    logger.error(f"Forbidden to send missing role message to {member.display_name} (id={member.id}).")
 
     # Make a leaderboard of the five justices
     message_content: str = ""
@@ -313,13 +339,13 @@ async def on_member_update(before: discord.Member, after: discord.Member):
         return
     if not all(set(rl.id for rl in before.roles) & role_category for role_category in REQUIRED_ROLES) and all(set(rl.id for rl in after.roles) & role_category for role_category in REQUIRED_ROLES):
         after.timed_out_until = None
-        print(f"{after.display_name} has been untimed out due to acquiring the necessary roles.")
+        logger.info(f"{after.display_name} (id={after.id}) has been untimed out due to acquiring the necessary roles.")
         if after.dm_channel is not None:
             await after.send(ROLE_RESTORATION_MESSAGE)
 
 
 async def shutdown():
-    print('SIGTERM received. Gracefully shutting down the bot.')
+    print('SIGTERM Received—Shutting Down'.center(shutil.get_terminal_size().columns))
     # Perform any necessary cleanup here
     await bot.close()  # Gracefully close the Discord bot connection
 
@@ -333,4 +359,4 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGTERM, signal_handler)
 
 # Run the bot
-bot.run(TOKEN)
+bot.run(TOKEN, log_handler=console_handler, log_formatter=formatter)
