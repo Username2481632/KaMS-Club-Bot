@@ -1,4 +1,4 @@
-numpy~=2.0.0
+numpy~=2.0.1
 python-dotenv~=1.0.1
 scipy~=1.14.0
 aiocron~=1.8
