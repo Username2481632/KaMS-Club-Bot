@@ -8,11 +8,10 @@ from decimal import Decimal
 
 import aiocron
 import discord
-import numpy as np
 from discord.ext import commands
 from dotenv import load_dotenv
-from scipy.optimize import OptimizeResult
-from scipy.optimize import least_squares
+from scipy.interpolate import interp1d
+import numpy as np
 
 # Parameters
 MEMBER_CREDITS: float = 1.5
@@ -21,7 +20,8 @@ JUSTICE_COUNT: int = 5
 JUSTICE_CHANNEL_NAME: str = "justices"
 JUSTICE_CHANNEL_CATEGORY: str = "Information"
 TIMEOUT_THRESHOLD: float = -0.5  # If a member's shallow score falls below this value, member gets timed out
-TIMEOUT_DURATION_OUTLINE: dict[float, float] = {-TIMEOUT_THRESHOLD: 1.0, 2.5: 10080.0}  # Downvotes: Timeout duration (minutes)
+TIMEOUT_NOTIFICATION_THRESHOLD: float = 0.5  # If a member gets timed out for more than this many minutes, member gets notified
+TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0, TIMEOUT_THRESHOLD: TIMEOUT_NOTIFICATION_THRESHOLD, -1.0: 10.0, -2.0: 300.0, -3.0: 10080.0, -4.0: 10080.0}  # Score: Timeout duration (minutes)
 CREDIT_THRESHOLD: float = 1.0  # Deep score threshold above which a member receives full credits
 MIN_CREDITS: float = 0.75  # Number of credits given to members under the CREDIT_THRESHOLD
 REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1261372426382737610, 1261371054161662044},
@@ -47,32 +47,23 @@ bot = commands.Bot(command_prefix='/', intents=intents)
 data_file: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data.json"))
 
 
-# Define the function to fit
-def fit_function(x: np.ndarray, l_param: float, k: float) -> np.ndarray:
-    return l_param / (1 + np.exp(-k * (x - max(TIMEOUT_DURATION_OUTLINE.keys()) / 2.0)))
+
+# Extract x and y coordinates from the dictionary
+x_coords: np.ndarray = np.array(list(TIMEOUT_DURATION_OUTLINE.keys()))
+y_coords: np.ndarray = np.array(list(TIMEOUT_DURATION_OUTLINE.values()))
+
+# Create a linear interpolation function
+linear_interp = interp1d(x_coords, y_coords, kind='linear', fill_value='extrapolate')
 
 
-# Define the cost function for least_squares
-def cost_function(params: list[float], local_x_data: np.ndarray, local_y_data: np.ndarray) -> np.ndarray:
-    return fit_function(local_x_data, *params) - local_y_data
+# Function to evaluate the linear interpolation at any given x
+def calculate_timeout(x: float) -> float:
+    return float(linear_interp(x))
 
 
-# Convert desired_points dictionary to numpy arrays
-x_data: np.ndarray = np.array(list(TIMEOUT_DURATION_OUTLINE.keys()))
-y_data: np.ndarray = np.array(list(TIMEOUT_DURATION_OUTLINE.values()))
-
-# Use least_squares to find the best parameters
-result: OptimizeResult = least_squares(cost_function, [1, 1], args=(x_data, y_data))
-
-# Extract the optimal values of L and k
-L_opt: float
-k_opt: float
-L_opt, k_opt = result.x
-
-
-# Function to calculate timeout, using the original y_data values
-def calculate_timeout(score: float) -> float:
-    return float(fit_function(np.array([-score]), L_opt, k_opt)[0])
+# Generate points to plot the function
+x_values: np.ndarray = np.linspace(min(x_coords), max(x_coords), 500)
+y_values: np.ndarray = linear_interp(x_values)
 
 
 # Helper function to load data from JSON file
@@ -175,7 +166,7 @@ async def timeout_member(member: discord.Member, minutes: float) -> None:
     duration: datetime.timedelta = datetime.timedelta(minutes=minutes)
     until: datetime.datetime = discord.utils.utcnow() + duration
     # If member is not currently timed out, send them a DM
-    if not member.timed_out_until and member.dm_channel is not None and minutes > 0.5:
+    if not member.timed_out_until and member.dm_channel is not None and minutes > TIMEOUT_NOTIFICATION_THRESHOLD:
         try:
             await member.send(f"You have been timed out for {minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a moderator.")
         except Exception as e:
