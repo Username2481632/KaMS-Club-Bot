@@ -361,7 +361,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
 
 
 async def shutdown():
-    print('SIGTERM Received—Shutting Down'.center(shutil.get_terminal_size().columns))
+    print('SIGTERM Received—Shutting Down'.center(shutil.get_terminal_size().columns, '='))
     # Perform any necessary cleanup here
     await bot.close()  # Gracefully close the Discord bot connection
 
