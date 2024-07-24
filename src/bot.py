@@ -20,8 +20,8 @@ GUILD_ID: int = 1201368154174144602
 JUSTICE_COUNT: int = 5
 JUSTICE_CHANNEL_NAME: str = "justices"
 JUSTICE_CHANNEL_CATEGORY: str = "Information"
-TIMEOUT_THRESHOLD: float = -0.5
-TIMEOUT_DURATION_OUTLINE: dict[float, float] = {TIMEOUT_THRESHOLD: 2.0, 2.5: 10080.0}  # Downvotes: Timeout duration (minutes)
+TIMEOUT_THRESHOLD: float = -0.5  # If a member's shallow score falls below this value, member gets timed out
+TIMEOUT_DURATION_OUTLINE: dict[float, float] = {-TIMEOUT_THRESHOLD: 2.0, 2.5: 10080.0}  # Downvotes: Timeout duration (minutes)
 CREDIT_THRESHOLD: float = 1.0  # Deep score threshold above which a member receives full credits
 MIN_CREDITS: float = 0.75  # Number of credits given to members under the CREDIT_THRESHOLD
 REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1261372426382737610, 1261371054161662044},
@@ -150,7 +150,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
     target_member: discord.Member | None = interaction.guild.get_member(target.id)
     if target_member is not None:
         await set_respect_role(interaction.guild, target_member, data[target_id]["shallow_score"])
-        if data[target_id]["shallow_score"] < (-TIMEOUT_THRESHOLD + 1.0):
+        if data[target_id]["shallow_score"] < (TIMEOUT_THRESHOLD + 1.0):
             await timeout_member(target_member, calculate_timeout(data[target_id]["shallow_score"]))
 
     save_data(data)
@@ -175,7 +175,7 @@ async def timeout_member(member: discord.Member, minutes: float) -> None:
     duration: datetime.timedelta = datetime.timedelta(minutes=minutes)
     until: datetime.datetime = discord.utils.utcnow() + duration
     # If member is not currently timed out, send them a DM
-    if not member.timed_out_until and member.dm_channel is not None and minutes > 0.25:
+    if not member.timed_out_until and member.dm_channel is not None and minutes > 0.5:
         try:
             await member.send(f"You have been timed out for {minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a moderator.")
         except Exception as e:
