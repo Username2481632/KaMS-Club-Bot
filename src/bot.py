@@ -21,7 +21,7 @@ JUSTICE_COUNT: int = 5
 JUSTICE_CHANNEL_NAME: str = "justices"
 JUSTICE_CHANNEL_CATEGORY: str = "Information"
 TIMEOUT_THRESHOLD: float = -0.5  # If a member's shallow score falls below this value, member gets timed out
-TIMEOUT_DURATION_OUTLINE: dict[float, float] = {-TIMEOUT_THRESHOLD: 2.0, 2.5: 10080.0}  # Downvotes: Timeout duration (minutes)
+TIMEOUT_DURATION_OUTLINE: dict[float, float] = {-TIMEOUT_THRESHOLD: 1.0, 2.5: 10080.0}  # Downvotes: Timeout duration (minutes)
 CREDIT_THRESHOLD: float = 1.0  # Deep score threshold above which a member receives full credits
 MIN_CREDITS: float = 0.75  # Number of credits given to members under the CREDIT_THRESHOLD
 REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1261372426382737610, 1261371054161662044},
@@ -49,7 +49,7 @@ data_file: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../dat
 
 # Define the function to fit
 def fit_function(x: np.ndarray, l_param: float, k: float) -> np.ndarray:
-    return l_param / (1 + np.exp(-k * (x - 0.5)))
+    return l_param / (1 + np.exp(-k * (x - max(TIMEOUT_DURATION_OUTLINE.keys()) / 2.0)))
 
 
 # Define the cost function for least_squares
