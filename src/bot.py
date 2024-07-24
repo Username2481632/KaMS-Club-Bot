@@ -273,7 +273,7 @@ async def day_change() -> None:
     for member_id in data:
         if data[member_id]["shallow_score"] > 0:
             data[member_id]["deep_score"] += max(0.0, math.log((data[member_id]["shallow_score"] + 0.05), member_count) + 0.7)
-            data[member_id]["shallow_score"] = 0
+            data[member_id]["shallow_score"] = max(0.0, min(data[member_id]["deep_score"], 0.5))
         elif data[member_id]["shallow_score"] < 0:
             data[member_id]["deep_score"] += data[member_id]["shallow_score"]
         elif data[member_id]["deep_score"] > 0.1:
