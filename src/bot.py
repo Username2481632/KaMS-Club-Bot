@@ -163,7 +163,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
     if target_member is not None:
         await set_respect_role(interaction.guild, target_member, data[target_id]["shallow_score"])
         if data[target_id]["shallow_score"] < (TIMEOUT_THRESHOLD + 1.0):
-            await timeout_member(target_member, calculate_timeout(data[target_id]["shallow_score"]), data)
+            await intelli_timeout_member(target_member, calculate_timeout(data[target_id]["shallow_score"]), data, severity)
 
     save_data(data)
 
@@ -192,17 +192,20 @@ async def dm_member(member: discord.Member, message: str) -> None:
         logger.error(f"Forbidden to send message to \"{member.display_name}\" (id={member.id}).")
 
 
-async def timeout_member(member: discord.Member, minutes: float, data: DataType) -> None:
-    new_duration: datetime.timedelta = datetime.timedelta(minutes=minutes)
+async def intelli_timeout_member(member: discord.Member, minutes: float, data: DataType, vote_severity: float) -> None:
     old_duration: datetime.timedelta = member.timed_out_until - discord.utils.utcnow() if member.timed_out_until else datetime.timedelta(0)
+    new_duration: datetime.timedelta = datetime.timedelta(minutes=minutes)
+    if vote_severity > 0 and new_duration >= old_duration:
+        return
+    if new_duration == old_duration:
+        return
     until: datetime.datetime = discord.utils.utcnow() + new_duration
     if "suspended_timeout" in data[str(member.id)]:
         data[str(member.id)]["suspended_timeout"] = new_duration.total_seconds()
     else:
         try:
             await member.edit(timed_out_until=until)
-            if minutes > 0.0:
-                logger.info(f"{member.display_name} has been timed out for {minutes} minutes.")
+            logger.info(f"{member.display_name} has been timed out for {minutes} minutes.")
             if old_duration < TIMEOUT_NOTIFICATION_THRESHOLD < new_duration:
                 await dm_member(member, f"You have been timed out for {minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a moderator.")
         except discord.errors.Forbidden:
