@@ -33,6 +33,7 @@ MISSING_ROLE_MESSAGE = ("Hi there. It seems like you're missing some roles, whic
 ROLE_RESTORATION_MESSAGE = "You have been untimed out due to acquiring the necessary roles. Welcome back!"
 LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 MISSING_ROLE_TIMEOUT_DURATION: datetime.timedelta = datetime.timedelta(days=2)
+JUSTICE_DEEP_SCORE_REQUIREMENT: float = 1.5
 
 # Load environment variables from .env file
 load_dotenv()
@@ -251,7 +252,7 @@ def calculate_justices(data: dict[str, dict[str, str | float]]) -> list[str]:
     if len(data.keys()) < JUSTICE_COUNT * 5:
         return []
     top = sorted(data.keys(), key=lambda x: data[x]["deep_score"], reverse=True)[:JUSTICE_COUNT]
-    if data[top[-1]]["deep_score"] > CREDIT_THRESHOLD:
+    if data[top[-1]]["deep_score"] > JUSTICE_DEEP_SCORE_REQUIREMENT:
         return top
     return []
 
