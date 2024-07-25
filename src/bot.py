@@ -6,14 +6,18 @@ import math
 import os
 import shutil
 import signal
+import time
 from decimal import Decimal
 
-import aiocron
 import discord
 import numpy as np
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from scipy.interpolate import interp1d
+
+# Set the timezone to UTC
+os.environ['TZ'] = 'UTC'
+time.tzset()
 
 # Parameters
 MEMBER_CREDITS: float = 1.5
@@ -217,6 +221,7 @@ async def on_ready():
     logger.info("Bot is ready, starting to sync commands...")
     await bot.tree.sync()
     logger.info("Slash commands synced!")
+    day_change.start()
     logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
 
 
@@ -261,7 +266,7 @@ def calculate_justices(data: dict[str, dict[str, str | float]]) -> list[str]:
     return []
 
 
-@aiocron.crontab('0 0 * * *')
+@tasks.loop(time=datetime.time(hour=0, minute=0))
 async def day_change() -> None:
     data: DataType = await load_data()
     # Backup data
