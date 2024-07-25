@@ -267,15 +267,6 @@ async def set_justice_role(member: discord.Member, justice_ids: list[str]) -> No
         await member.remove_roles(justice_role)
 
 
-def calculate_justices(data: dict[str, dict[str, str | float]]) -> list[str]:
-    if len(data.keys()) < JUSTICE_COUNT * 5:
-        return []
-    top = sorted(data.keys(), key=lambda x: data[x]["deep_score"], reverse=True)[:JUSTICE_COUNT]
-    if data[top[-1]]["deep_score"] > JUSTICE_DEEP_SCORE_REQUIREMENT:
-        return top
-    return []
-
-
 @tasks.loop(time=datetime.time(hour=0, minute=0))
 async def day_change() -> None:
     async with data_lock:
@@ -299,7 +290,15 @@ async def day_change() -> None:
                 data[member_id]["deep_score"] += data[member_id]["shallow_score"]
             elif data[member_id]["deep_score"] > 0.1:
                 data[member_id]["deep_score"] -= 0.0078125  # 1/28
-        justice_ids: list[str] = calculate_justices(data)
+
+        # Calculate justices
+        if len(data.keys()) < JUSTICE_COUNT * 5:
+            justice_ids = []
+        else:
+            justice_ids = sorted(data.keys(), key=lambda x: data[x]["deep_score"], reverse=True)[:JUSTICE_COUNT]
+            if data[justice_ids[-1]]["deep_score"] <= JUSTICE_DEEP_SCORE_REQUIREMENT:
+                justice_ids = []
+
         for member_id in data:
             member: discord.Member | None = guild.get_member(int(member_id))
 
