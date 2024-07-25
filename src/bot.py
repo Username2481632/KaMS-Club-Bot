@@ -181,7 +181,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
 
         try:
             # noinspection PyUnresolvedReferences
-            await interaction.response.send_message(f"Vote successful! You have {data[user_id]['credits']} credits remaining.", ephemeral=True, delete_after=10)
+            await interaction.response.send_message(f"Vote successful! You have {data[user_id]['credits']} credits remaining.", ephemeral=True, delete_after=15)
         except discord.errors.NotFound:
             logger.error(f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long.")
 
