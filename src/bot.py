@@ -96,7 +96,6 @@ data_lock = asyncio.Lock()
 
 
 async def load_data(*member_ids: str) -> DataType:
-    await data_lock.acquire()
     if not os.path.exists(data_file):
         return {member_id: default_user_entry for member_id in member_ids}
     with open(data_file, 'r') as file:
@@ -111,7 +110,6 @@ async def load_data(*member_ids: str) -> DataType:
 def save_data(data: DataType) -> None:
     with open(data_file, 'w') as file:
         json.dump(data, file, indent=4)
-    data_lock.release()
 
 
 async def set_respect_role(guild: discord.Guild, member: discord.Member, score: float) -> None:
@@ -136,55 +134,56 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
 
 @bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
 async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float):
-    # Make sure this isn't a dm
-    if interaction.guild is None:
-        # noinspection PyUnresolvedReferences
-        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        return
-    if severity == 0.0:
-        # noinspection PyUnresolvedReferences
-        await interaction.response.send_message("You cannot vote with a severity of 0.", ephemeral=True)
-        return
-    user_id: str = str(interaction.user.id)
-    target_id: str = str(target.id)
-    data: DataType = await load_data(user_id, target_id)
-    if -1.0 <= severity <= 1.0:
-        if abs(severity) > data[user_id]["credits"]:
+    async with data_lock:
+        # Make sure this isn't a dm
+        if interaction.guild is None:
             # noinspection PyUnresolvedReferences
-            await interaction.response.send_message(f"Insufficient credits! You only have {data[user_id]['credits']} credits remaining.", ephemeral=True, delete_after=10)
-            logger.info(f"Insufficient credits for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
             return
+        if severity == 0.0:
+            # noinspection PyUnresolvedReferences
+            await interaction.response.send_message("You cannot vote with a severity of 0.", ephemeral=True)
+            return
+        user_id: str = str(interaction.user.id)
+        target_id: str = str(target.id)
+        data: DataType = await load_data(user_id, target_id)
+        if -1.0 <= severity <= 1.0:
+            if abs(severity) > data[user_id]["credits"]:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.send_message(f"Insufficient credits! You only have {data[user_id]['credits']} credits remaining.", ephemeral=True, delete_after=10)
+                logger.info(f"Insufficient credits for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
+                return
+            else:
+                data[user_id]["credits"] = float(Decimal(str(data[user_id]["credits"])) - Decimal(str(abs(severity))))
         else:
-            data[user_id]["credits"] = float(Decimal(str(data[user_id]["credits"])) - Decimal(str(abs(severity))))
-    else:
-        # noinspection PyUnresolvedReferences
-        await interaction.response.send_message("Invalid severity value. Please use a value between -1 and 1.", ephemeral=True)
-        logger.info(f"Invalid severity value for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
-        return
+            # noinspection PyUnresolvedReferences
+            await interaction.response.send_message("Invalid severity value. Please use a value between -1 and 1.", ephemeral=True)
+            logger.info(f"Invalid severity value for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
+            return
 
-    data[target_id]["shallow_score"] = float(Decimal(str(data[target_id]["shallow_score"])) + Decimal(str(severity)))
-    target_member: discord.Member | None = interaction.guild.get_member(target.id)
-    if target_member is not None:
-        await set_respect_role(interaction.guild, target_member, data[target_id]["shallow_score"])
-        if data[target_id]["shallow_score"] < (TIMEOUT_THRESHOLD + 1.0):
-            await intelli_timeout_member(target_member, calculate_timeout(data[target_id]["shallow_score"]), data, severity)
+        data[target_id]["shallow_score"] = float(Decimal(str(data[target_id]["shallow_score"])) + Decimal(str(severity)))
+        target_member: discord.Member | None = interaction.guild.get_member(target.id)
+        if target_member is not None:
+            await set_respect_role(interaction.guild, target_member, data[target_id]["shallow_score"])
+            if data[target_id]["shallow_score"] < (TIMEOUT_THRESHOLD + 1.0):
+                await intelli_timeout_member(target_member, calculate_timeout(data[target_id]["shallow_score"]), data, severity)
 
-    save_data(data)
+        save_data(data)
 
-    # Send a message publicly
-    public_message = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}."
-    # async for previous_message in interaction.channel.history(limit=1):
-    #     if previous_message.author == bot.user:
-    #         await previous_message.edit(content=f"{previous_message.content}\n{public_message}")
-    #         break
-    # else:
-    await interaction.channel.send(public_message)
+        # Send a message publicly
+        public_message = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}."
+        # async for previous_message in interaction.channel.history(limit=1):
+        #     if previous_message.author == bot.user:
+        #         await previous_message.edit(content=f"{previous_message.content}\n{public_message}")
+        #         break
+        # else:
+        await interaction.channel.send(public_message)
 
-    try:
-        # noinspection PyUnresolvedReferences
-        await interaction.response.send_message(f"Vote successful! You have {data[user_id]['credits']} credits remaining.", ephemeral=True, delete_after=10)
-    except discord.errors.NotFound:
-        logger.error(f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long.")
+        try:
+            # noinspection PyUnresolvedReferences
+            await interaction.response.send_message(f"Vote successful! You have {data[user_id]['credits']} credits remaining.", ephemeral=True, delete_after=10)
+        except discord.errors.NotFound:
+            logger.error(f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long.")
 
 
 async def dm_member(member: discord.Member, message: str) -> None:
@@ -218,11 +217,12 @@ async def intelli_timeout_member(member: discord.Member, minutes: float, data: D
 
 @bot.event
 async def on_ready():
-    logger.info("Bot is ready, starting to sync commands...")
-    await bot.tree.sync()
-    logger.info("Slash commands synced!")
-    day_change.start()
-    logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
+    async with data_lock:
+        logger.info("Bot is ready, starting to sync commands...")
+        await bot.tree.sync()
+        logger.info("Slash commands synced!")
+        day_change.start()
+        logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
 
 
 @bot.event
@@ -234,15 +234,25 @@ async def on_member_join(member: discord.Member):
     # DM the member
     await dm_member(member,
                     "Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. Thanks!")
-    data: DataType = await load_data()
-    if not member.id in data:
-        data[member_id] = default_user_entry
-        save_data(data)
-    else:
-        justice_ids: list[str] = calculate_justices(data)
-        await set_justice_role(member, justice_ids)
+    async with data_lock:
+        data: DataType = await load_data()
+        if not member.id in data:
+            data[member_id] = default_user_entry
+            save_data(data)
+        else:
+            # Fetch justice ids from the justices channel
+            justice_channel_category: discord.CategoryChannel | None = discord.utils.get(member.guild.categories, name=JUSTICE_CHANNEL_CATEGORY)
+            if justice_channel_category is not None:
+                justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
+                if justice_channel is not None:
+                    async for message in justice_channel.history(limit=1):
+                        if message.author == bot.user:
+                            # Extract the mentions from the message
+                            justice_ids: list[str] = [str(mention.id) for mention in message.mentions]
+                            await set_justice_role(member, justice_ids)
+                            break
 
-    await set_respect_role(member.guild, member, data[member_id]["shallow_score"])
+        await set_respect_role(member.guild, member, data[member_id]["shallow_score"])
 
 
 async def set_justice_role(member: discord.Member, justice_ids: list[str]) -> None:
@@ -268,69 +278,70 @@ def calculate_justices(data: dict[str, dict[str, str | float]]) -> list[str]:
 
 @tasks.loop(time=datetime.time(hour=0, minute=0))
 async def day_change() -> None:
-    data: DataType = await load_data()
-    # Backup data
-    if not os.path.exists("../data_backup"):
-        os.makedirs("../data_backup")
-    with open(f"../data_backup/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json", 'w') as file:
-        json.dump(data, file, indent=4)
+    async with data_lock:
+        data: DataType = await load_data()
+        # Backup data
+        if not os.path.exists("../data_backup"):
+            os.makedirs("../data_backup")
+        with open(f"../data_backup/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json", 'w') as file:
+            json.dump(data, file, indent=4)
 
-    guild: discord.Guild | None = bot.get_guild(GUILD_ID)
-    if guild is None:
-        logger.error("Could not find provided guild.")
-        return
-    member_count: int = sum(not member.bot for member in bot.get_guild(GUILD_ID).members)
-    for member_id in data:
-        if data[member_id]["shallow_score"] > 0:
-            data[member_id]["deep_score"] += max(0.0, math.log((data[member_id]["shallow_score"] + 0.05), member_count) + 0.7)
-            data[member_id]["shallow_score"] = max(0.0, min(data[member_id]["deep_score"], 0.5))
-        elif data[member_id]["shallow_score"] < 0:
-            data[member_id]["deep_score"] += data[member_id]["shallow_score"]
-        elif data[member_id]["deep_score"] > 0.1:
-            data[member_id]["deep_score"] -= 0.0078125  # 1/28
-    justice_ids: list[str] = calculate_justices(data)
-    for member_id in data:
-        member: discord.Member | None = guild.get_member(int(member_id))
+        guild: discord.Guild | None = bot.get_guild(GUILD_ID)
+        if guild is None:
+            logger.error("Could not find provided guild.")
+            return
+        member_count: int = sum(not member.bot for member in bot.get_guild(GUILD_ID).members)
+        for member_id in data:
+            if data[member_id]["shallow_score"] > 0:
+                data[member_id]["deep_score"] += max(0.0, math.log((data[member_id]["shallow_score"] + 0.05), member_count) + 0.7)
+                data[member_id]["shallow_score"] = max(0.0, min(data[member_id]["deep_score"], 0.5))
+            elif data[member_id]["shallow_score"] < 0:
+                data[member_id]["deep_score"] += data[member_id]["shallow_score"]
+            elif data[member_id]["deep_score"] > 0.1:
+                data[member_id]["deep_score"] -= 0.0078125  # 1/28
+        justice_ids: list[str] = calculate_justices(data)
+        for member_id in data:
+            member: discord.Member | None = guild.get_member(int(member_id))
 
-        if member is not None:
-            await set_justice_role(member, justice_ids)
-        if data[member_id]["deep_score"] < CREDIT_THRESHOLD:
-            data[member_id]["credits"] = MIN_CREDITS
+            if member is not None:
+                await set_justice_role(member, justice_ids)
+            if data[member_id]["deep_score"] < CREDIT_THRESHOLD:
+                data[member_id]["credits"] = MIN_CREDITS
+            else:
+                data[member_id]["credits"] = MEMBER_CREDITS
+
+            # Timeout members that are missing required roles
+            if not member.bot and member is not None:
+                member_role_ids: set[int] = set(rl.id for rl in member.roles)
+                if not all(member_role_ids & role_category for role_category in REQUIRED_ROLES):
+                    if "suspended_timeout" not in data[member_id]:
+                        data[member_id]["suspended_timeout"] = 0.0 if member.timed_out_until is None else (member.timed_out_until - discord.utils.utcnow()).total_seconds()
+                        await dm_member(member, MISSING_ROLE_MESSAGE)
+                        logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
+                    member.timed_out_until = discord.utils.utcnow() + MISSING_ROLE_TIMEOUT_DURATION
+
+        # Make a leaderboard of the five justices
+        message_content: str = ""
+        i: int
+        for i, justice_id in enumerate(justice_ids):
+            justice = bot.get_user(int(justice_id))
+            data[justice_id]["credits"] += (JUSTICE_COUNT - i) * 0.5
+            message_content += f"{i + 1}. {justice.mention}\n"
+        if not message_content:
+            message_content = "No justices have been determined yet."
+
+        justice_channel_category: discord.CategoryChannel | None = discord.utils.get(guild.categories, name=JUSTICE_CHANNEL_CATEGORY)
+        if justice_channel_category is None:
+            justice_channel_category = await guild.create_category(JUSTICE_CHANNEL_CATEGORY)
+        justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
+        if justice_channel is None:
+            justice_channel = await guild.create_text_channel(JUSTICE_CHANNEL_NAME, category=justice_channel_category)
         else:
-            data[member_id]["credits"] = MEMBER_CREDITS
+            async for message in justice_channel.history():
+                await message.delete()
+        await justice_channel.send(message_content, allowed_mentions=discord.AllowedMentions.none())
 
-        # Timeout members that are missing required roles
-        if not member.bot and member is not None:
-            member_role_ids: set[int] = set(rl.id for rl in member.roles)
-            if not all(member_role_ids & role_category for role_category in REQUIRED_ROLES):
-                if "suspended_timeout" not in data[member_id]:
-                    data[member_id]["suspended_timeout"] = 0.0 if member.timed_out_until is None else (member.timed_out_until - discord.utils.utcnow()).total_seconds()
-                    await dm_member(member, MISSING_ROLE_MESSAGE)
-                    logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
-                member.timed_out_until = discord.utils.utcnow() + MISSING_ROLE_TIMEOUT_DURATION
-
-    # Make a leaderboard of the five justices
-    message_content: str = ""
-    i: int
-    for i, justice_id in enumerate(justice_ids):
-        justice = bot.get_user(int(justice_id))
-        data[justice_id]["credits"] += (JUSTICE_COUNT - i) * 0.5
-        message_content += f"{i + 1}. {justice.display_name}\n"
-    if not message_content:
-        message_content = "No justices have been determined yet."
-
-    justice_channel_category: discord.CategoryChannel | None = discord.utils.get(guild.categories, name=JUSTICE_CHANNEL_CATEGORY)
-    if justice_channel_category is None:
-        justice_channel_category = await guild.create_category(JUSTICE_CHANNEL_CATEGORY)
-    justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
-    if justice_channel is None:
-        justice_channel = await guild.create_text_channel(JUSTICE_CHANNEL_NAME, category=justice_channel_category)
-    else:
-        async for message in justice_channel.history():
-            await message.delete()
-    await justice_channel.send(message_content)
-
-    save_data(data)
+        save_data(data)
 
     # Cleanup polls channel
     for channel in guild.text_channels:
@@ -348,32 +359,30 @@ async def on_member_update(before: discord.Member, after: discord.Member):
     if not all(set(rl.id for rl in before.roles) & role_category for role_category in REQUIRED_ROLES) and all(set(rl.id for rl in after.roles) & role_category for role_category in REQUIRED_ROLES):
         assert before.id == after.id
         member_id_string: str = str(after.id)
-        data: DataType = await load_data(member_id_string)
-        if "suspended_timeout" in data[member_id_string]:
-            try:
-                if data[member_id_string]["suspended_timeout"] > 0:
-                    after.timed_out_until = discord.utils.utcnow() + datetime.timedelta(seconds=data[member_id_string]["suspended_timeout"])
+        async with data_lock:
+            data: DataType = await load_data(member_id_string)
+            if "suspended_timeout" in data[member_id_string]:
+                try:
+                    if data[member_id_string]["suspended_timeout"] > 0:
+                        after.timed_out_until = discord.utils.utcnow() + datetime.timedelta(seconds=data[member_id_string]["suspended_timeout"])
+                    else:
+                        after.timed_out_until = None
+                except discord.errors.Forbidden:
+                    logger.error(f"Forbidden to untimeout user \"{after.display_name}\" (id={after.id}) for role acquisition.")
+                    return
+                logger.info(f"{after.display_name} (id={after.id}) has been untimed out due to acquiring the necessary roles.")
+                if after.timed_out_until is not None:
+                    logger.info(f"{after.display_name} (id={after.id}) still has a respect timeout of {data[member_id_string]['suspended_timeout'] / 60.0} minutes to serve.")
+                    await dm_member(after, f"Your role timeout has been removed, but you still have a timeout of {data[member_id_string]['suspended_timeout'] / 60.0} minutes to serve.")
                 else:
-                    after.timed_out_until = None
-            except discord.errors.Forbidden:
-                logger.error(f"Forbidden to untimeout user \"{after.display_name}\" (id={after.id}) for role acquisition.")
-                data_lock.release()
-                return
-            logger.info(f"{after.display_name} (id={after.id}) has been untimed out due to acquiring the necessary roles.")
-            if after.timed_out_until is not None:
-                logger.info(f"{after.display_name} (id={after.id}) still has a respect timeout of {data[member_id_string]['suspended_timeout'] / 60.0} minutes to serve.")
-                await dm_member(after, f"Your role timeout has been removed, but you still have a timeout of {data[member_id_string]['suspended_timeout'] / 60.0} minutes to serve.")
-            else:
-                await dm_member(after, ROLE_RESTORATION_MESSAGE)
-            del data[str(after.id)]["suspended_timeout"]
-            save_data(data)
-        else:
-            data_lock.release()
+                    await dm_member(after, ROLE_RESTORATION_MESSAGE)
+                del data[str(after.id)]["suspended_timeout"]
+                save_data(data)
 
 
 async def shutdown():
     print('SIGTERM Received—Shutting Down'.center(shutil.get_terminal_size().columns, '='))
-    # Perform any necessary cleanup here
+    await data_lock.acquire()
     await bot.close()  # Gracefully close the Discord bot connection
 
 
