@@ -336,8 +336,9 @@ async def on_member_update(before: discord.Member, after: discord.Member):
     if before.roles == after.roles:
         return
     if not all(set(rl.id for rl in before.roles) & role_category for role_category in REQUIRED_ROLES) and all(set(rl.id for rl in after.roles) & role_category for role_category in REQUIRED_ROLES):
-        data: DataType = await load_data()
+        assert before.id == after.id
         member_id_string: str = str(after.id)
+        data: DataType = await load_data(member_id_string)
         if "suspended_timeout" in data[member_id_string]:
             try:
                 if data[member_id_string]["suspended_timeout"] > 0:
