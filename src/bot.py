@@ -201,7 +201,8 @@ async def timeout_member(member: discord.Member, minutes: float, data: DataType)
     else:
         try:
             await member.edit(timed_out_until=until)
-            logger.info(f"{member.display_name} has been timed out for {minutes} minutes.")
+            if minutes > 0.0:
+                logger.info(f"{member.display_name} has been timed out for {minutes} minutes.")
             if old_duration < TIMEOUT_NOTIFICATION_THRESHOLD < new_duration:
                 await dm_member(member, f"You have been timed out for {minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a moderator.")
         except discord.errors.Forbidden:
