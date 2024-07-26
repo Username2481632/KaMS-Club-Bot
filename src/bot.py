@@ -116,14 +116,15 @@ async def load_data() -> DataType:
 
 
 # Helper function to save data to JSON file
-def save_data(data: DataType) -> None:
+def save_data(data: DataType, output_file: str = data_file) -> None:
     """
     Save data to the JSON file.
+    :param output_file:
     :param data:
     """
     # Convert the keys to strings
     data = {str(key): value for key, value in data.items()}
-    with open(data_file, 'w') as file:
+    with open(output_file, 'w') as file:
         json.dump(data, file)
 
 
@@ -334,7 +335,7 @@ def justice_score(data: DataType, member: discord.member) -> (float, datetime.da
     return data[member.id]["deep_score"], member.joined_at
 
 
-@tasks.loop(time=datetime.time(hour=17, minute=31, second=20))
+@tasks.loop(time=datetime.time(hour=0, minute=0, second=0))
 async def day_change() -> None:
     """
     Loop that runs every day at midnight to update the data and assign roles.
@@ -345,8 +346,7 @@ async def day_change() -> None:
         # Backup data
         if not os.path.exists("../data_backup"):
             os.makedirs("../data_backup")
-        with open(f"../data_backup/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json", 'w') as file:
-            json.dump(data, file, indent=2)
+        save_data(data, "../data_backup/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json")  # Backup data
 
         guild: discord.Guild | None = bot.get_guild(GUILD_ID)
         if guild is None:
