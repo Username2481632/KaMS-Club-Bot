@@ -12,6 +12,7 @@ import shutil
 import signal
 import time
 from decimal import Decimal
+from types import FrameType
 
 import discord
 import numpy as np
@@ -123,9 +124,9 @@ def save_data(data: DataType, output_file: str = data_file) -> None:
     :param data:
     """
     # Convert the keys to strings
-    data = {str(key): value for key, value in data.items()}
+    converted_data = {str(key): value for key, value in data.items()}
     with open(output_file, 'w') as file:
-        json.dump(data, file)
+        json.dump(converted_data, file)
 
 
 async def set_respect_role(guild: discord.Guild, member: discord.Member, score: float) -> None:
@@ -182,7 +183,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
         if -1.0 <= severity <= 1.0:
             if abs(severity) > data[interaction.user.id]["credits"]:
                 # noinspection PyUnresolvedReferences
-                await interaction.response.send_message(f"Insufficient credits! You only have {data[user_id]['credits']} credits remaining.", ephemeral=True, delete_after=10)
+                await interaction.response.send_message(f"Insufficient credits! You only have {data[interaction.user.id]['credits']} credits remaining.", ephemeral=True, delete_after=10)
                 logger.info(f"Insufficient credits for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
                 return
             else:
@@ -213,7 +214,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
 
         try:
             # noinspection PyUnresolvedReferences
-            await interaction.response.send_message(f"Vote successful! You have {data[user_id]['credits']} credits remaining.", ephemeral=True, delete_after=15)
+            await interaction.response.send_message(f"Vote successful! You have {data[interaction.user.id]['credits']} credits remaining.", ephemeral=True, delete_after=15)
         except discord.errors.NotFound:
             logger.error(f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long.")
 
@@ -263,7 +264,7 @@ async def intelli_timeout_member(member: discord.Member, minutes: float, data: D
 
 
 @bot.event
-async def on_ready():
+async def on_ready() -> None:
     """
     Event that runs when the bot is ready, syncing the commands and starting the day_change loop.
     """
@@ -276,7 +277,7 @@ async def on_ready():
 
 
 @bot.event
-async def on_member_join(member: discord.Member):
+async def on_member_join(member: discord.Member) -> None:
     """
     Event that runs when a member joins the server, welcoming them and setting their roles.
     :param member:
@@ -327,7 +328,7 @@ async def set_justice_role(member: discord.Member, justice_ids: list[int]) -> No
         await member.remove_roles(justice_role)
 
 
-def justice_score(data: DataType, member: discord.member) -> (float, datetime.datetime):
+def justice_score(data: DataType, member: discord.member) -> tuple[float, datetime.datetime]:
     """
     Calculate the justice score of a member.
     :param data:
@@ -377,7 +378,7 @@ async def day_change() -> None:
                 justices = []
 
         for member_id in data:
-            member: discord.Member | None = guild.get_member(member_id)
+            member = guild.get_member(member_id)
 
             if member is not None:
                 await set_justice_role(member, [j.id for j in justices])
@@ -465,7 +466,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
                 save_data(data)
 
 
-async def shutdown():
+async def shutdown() -> None:
     """
     Gracefully shuts down the bot.
     """
@@ -475,7 +476,7 @@ async def shutdown():
 
 
 # noinspection PyUnusedLocal
-def signal_handler(sig, frame):
+def signal_handler(sig: int, frame: FrameType | None) -> None:
     """
     Signal handler for SIGTERM.
     :param sig:
