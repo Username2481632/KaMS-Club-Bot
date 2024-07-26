@@ -310,7 +310,7 @@ async def day_change() -> None:
                 data[member_id]["credits"] = MEMBER_CREDITS
 
             # Timeout members that are missing required roles
-            if not member.bot and member is not None:
+            if member is not None and not member.bot:
                 member_role_ids: set[int] = set(rl.id for rl in member.roles)
                 if not all(member_role_ids & role_category for role_category in REQUIRED_ROLES):
                     if "suspended_timeout" not in data[member_id]:
