@@ -241,7 +241,9 @@ async def intelli_timeout_member(member: discord.Member, minutes: float, data: D
     :param vote_severity:
     :return:
     """
-    old_duration: datetime.timedelta = member.timed_out_until - discord.utils.utcnow() if member.timed_out_until else datetime.timedelta()
+    old_duration: datetime.timedelta = datetime.timedelta()
+    if member.timed_out_until is not None and (member.timed_out_until - discord.utils.utcnow()) > old_duration:
+        old_duration = member.timed_out_until - discord.utils.utcnow()
     new_duration: datetime.timedelta = datetime.timedelta(minutes=minutes)
     if vote_severity > 0 and new_duration >= old_duration:
         return
