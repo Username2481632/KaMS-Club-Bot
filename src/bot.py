@@ -38,11 +38,10 @@ CREDIT_THRESHOLD: float = 1.0  # Deep score threshold above which a member recei
 MIN_CREDITS: float = 0.75  # Number of credits given to members under the CREDIT_THRESHOLD
 REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1261372426382737610, 1261371054161662044},
                                   {1256626845970075779, 1256627378763993189}]  # Ids of roles that are required to access the server
-#MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
-#     f"Hi there. It seems like you're missing some roles, which is why {'you\'ve been temporarily timed out' if not timed_out else 'your disrespect timeout has been put on hold and will stop decreasing'}. No worries, "
-#     f"though! To {'regain access to the server' if not timed_out else 'keep serving your disrespect timeout until it\'s done'}, just visit the <id:customize> tab to assign yourself the necessary roles. If you have any "
-#     f"questions or need assistance, feel free to reach out to a moderator. We're here to help!")
-MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda x: "pytype"
+MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
+    f"Hi there. It seems like you're missing some roles, which is why {'you\'ve been temporarily timed out' if not timed_out else 'your disrespect timeout has been put on hold and will stop decreasing'}. No worries, "
+    f"though! To {'regain access to the server' if not timed_out else 'keep serving your disrespect timeout until it\'s done'}, just visit the <id:customize> tab to assign yourself the necessary roles. If you have any "
+    f"questions or need assistance, feel free to reach out to a moderator. We're here to help!")
 ROLE_RESTORATION_MESSAGE = "You have been untimed out due to acquiring the necessary roles. Welcome back!"
 LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 MISSING_ROLE_TIMEOUT_DURATION: datetime.timedelta = datetime.timedelta(days=2)
