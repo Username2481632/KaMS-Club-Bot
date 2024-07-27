@@ -85,4 +85,4 @@ jobs:
             pip install --upgrade pip
             pip install -r <(curl -sL "https://raw.githubusercontent.com/${{ github.repository }}/main/requirements.txt")
             export DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}"
-            nohup python3 src/bot.py >> ./bot.log 2>&1 &
+            nohup python3.12 src/bot.py >> ./bot.log 2>&1 &
