@@ -38,10 +38,11 @@ CREDIT_THRESHOLD: float = 1.0  # Deep score threshold above which a member recei
 MIN_CREDITS: float = 0.75  # Number of credits given to members under the CREDIT_THRESHOLD
 REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1261372426382737610, 1261371054161662044},
                                   {1256626845970075779, 1256627378763993189}]  # Ids of roles that are required to access the server
-MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
-    f"Hi there. It seems like you're missing some roles, which is why {'you\'ve been temporarily timed out' if not timed_out else 'your disrespect timeout has been put on hold and will stop decreasing'}. No worries, "
-    f"though! To {'regain access to the server' if not timed_out else 'keep serving your disrespect timeout until it\'s done'}, just visit the <id:customize> tab to assign yourself the necessary roles. If you have any "
-    f"questions or need assistance, feel free to reach out to a moderator. We're here to help!")
+#MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
+#     f"Hi there. It seems like you're missing some roles, which is why {'you\'ve been temporarily timed out' if not timed_out else 'your disrespect timeout has been put on hold and will stop decreasing'}. No worries, "
+#     f"though! To {'regain access to the server' if not timed_out else 'keep serving your disrespect timeout until it\'s done'}, just visit the <id:customize> tab to assign yourself the necessary roles. If you have any "
+#     f"questions or need assistance, feel free to reach out to a moderator. We're here to help!")
+MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda x: "pytype"
 ROLE_RESTORATION_MESSAGE = "You have been untimed out due to acquiring the necessary roles. Welcome back!"
 LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 MISSING_ROLE_TIMEOUT_DURATION: datetime.timedelta = datetime.timedelta(days=2)
@@ -160,7 +161,7 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
 
 
 @bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
-async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float):
+async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float) -> None:
     """
     Vote for a user with a severity ranging from -1 to 1.
     :param interaction:
@@ -207,7 +208,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
         save_data(data)
 
         # Send a message publicly
-        public_message = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}."
+        public_message: str = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}."
         # async for previous_message in interaction.channel.history(limit=1):
         #     if previous_message.author == bot.user:
         #         await previous_message.edit(content=f"{previous_message.content}\n{public_message}")
@@ -331,7 +332,7 @@ async def set_justice_role(member: discord.Member, justice_ids: list[int]) -> No
         await member.remove_roles(justice_role)
 
 
-def justice_score(data: DataType, member: discord.member) -> tuple[float, datetime.datetime]:
+def justice_score(data: DataType, member: discord.Member) -> tuple[float, datetime.datetime]:
     """
     Calculate the justice score of a member.
     :param data:
