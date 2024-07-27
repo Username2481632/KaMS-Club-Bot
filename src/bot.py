@@ -13,6 +13,7 @@ import signal
 import time
 from decimal import Decimal
 from types import FrameType
+from typing import Callable
 
 import discord
 import numpy as np
@@ -37,8 +38,10 @@ CREDIT_THRESHOLD: float = 1.0  # Deep score threshold above which a member recei
 MIN_CREDITS: float = 0.75  # Number of credits given to members under the CREDIT_THRESHOLD
 REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1261372426382737610, 1261371054161662044},
                                   {1256626845970075779, 1256627378763993189}]  # Ids of roles that are required to access the server
-MISSING_ROLE_MESSAGE = ("Hi there. It seems like you're missing some roles, which is why you've been temporarily timed out. No worries, though! To regain access to the server, just visit the <id:customize> tab to assign yourself the "
-                        "necessary roles. If you have any questions or need assistance, feel free to reach out to a moderator. We're here to help!")
+MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
+    f"Hi there. It seems like you're missing some roles, which is why {'you\'ve been temporarily timed out' if not timed_out else 'your disrespect timeout has been put on hold and will stop decreasing'}. No worries, "
+    f"though! To {'regain access to the server' if not timed_out else 'keep serving your disrespect timeout until it\'s done'}, just visit the <id:customize> tab to assign yourself the necessary roles. If you have any "
+    f"questions or need assistance, feel free to reach out to a moderator. We're here to help!")
 ROLE_RESTORATION_MESSAGE = "You have been untimed out due to acquiring the necessary roles. Welcome back!"
 LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 MISSING_ROLE_TIMEOUT_DURATION: datetime.timedelta = datetime.timedelta(days=2)
@@ -255,7 +258,7 @@ async def intelli_timeout_member(member: discord.Member, minutes: float, data: D
         data[member.id]["suspended_timeout"] = new_duration.total_seconds()
     else:
         try:
-            await member.edit(timed_out_until=until)
+            await member.edit(timed_out_until=until, reason=f"Voted {vote_severity} by {member.display_name}.")
             logger.info(f"{member.display_name} has been timed out for {minutes} minutes.")
             if old_duration < TIMEOUT_NOTIFICATION_THRESHOLD < new_duration:
                 await dm_member(member, f"You have been timed out for {minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a moderator.")
@@ -392,10 +395,11 @@ async def day_change() -> None:
                 member_role_ids: set[int] = set(rl.id for rl in member.roles)
                 if not all(member_role_ids & role_category for role_category in REQUIRED_ROLES):
                     try:
-                        member.timed_out_until = discord.utils.utcnow() + MISSING_ROLE_TIMEOUT_DURATION
+                        await member.timeout(MISSING_ROLE_TIMEOUT_DURATION, reason="Missing required roles.")
                         if "suspended_timeout" not in data[member_id]:
-                            data[member_id]["suspended_timeout"] = 0.0 if member.timed_out_until is None else max(0.0, (member.timed_out_until - discord.utils.utcnow()).total_seconds())
-                            await dm_member(member, MISSING_ROLE_MESSAGE)
+                            is_timed_out: bool = member.timed_out_until is not None and member.timed_out_until > discord.utils.utcnow()
+                            data[member_id]["suspended_timeout"] = 0.0 if not is_timed_out else max(0.0, (member.timed_out_until - discord.utils.utcnow()).total_seconds())
+                            await dm_member(member, MISSING_ROLE_MESSAGE(is_timed_out))
                             logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
                     except discord.errors.Forbidden:
                         logger.error(f"Forbidden to timeout user \"{member.display_name}\" (id={member_id}) for missing required roles.")
@@ -449,15 +453,15 @@ async def on_member_update(before: discord.Member, after: discord.Member):
                 data[after.id] = default_user_entry
             if "suspended_timeout" in data[after.id]:
                 try:
-                    if data[after.id]["suspended_timeout"] > 0:
-                        after.timed_out_until = discord.utils.utcnow() + datetime.timedelta(seconds=data[after.id]["suspended_timeout"])
+                    if data[after.id]["suspended_timeout"] > 0.0:
+                        await after.timeout(datetime.timedelta(seconds=data[after.id]["suspended_timeout"]), reason="Resume timeout from before role necesitation.")
                     else:
-                        after.timed_out_until = None
+                        await after.timeout(None)
                 except discord.errors.Forbidden:
                     logger.error(f"Forbidden to untimeout user \"{after.display_name}\" (id={after.id}) for role acquisition.")
                     return
                 logger.info(f"{after.display_name} (id={after.id}) has been untimed out due to acquiring the necessary roles.")
-                if after.timed_out_until is not None:
+                if after.timed_out_until is not None and (after.timed_out_until - discord.utils.utcnow()) > TIMEOUT_NOTIFICATION_THRESHOLD:
                     logger.info(f"{after.display_name} (id={after.id}) still has a respect timeout of {data[after.id]['suspended_timeout'] / 60.0} minutes to serve.")
                     await dm_member(after, f"Your role timeout has been removed, but you still have a timeout of {data[after.id]['suspended_timeout'] / 60.0} minutes to serve.")
                 else:
