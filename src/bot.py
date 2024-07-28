@@ -418,7 +418,9 @@ async def day_change() -> None:
             justice_channel_category = await guild.create_category(JUSTICE_CHANNEL_CATEGORY)
         justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
         if justice_channel is None:
-            justice_channel = await guild.create_text_channel(JUSTICE_CHANNEL_NAME, category=justice_channel_category)
+            justice_channel = await justice_channel_category.create_text_channel(JUSTICE_CHANNEL_NAME,
+                                                                                 overwrites={guild.default_role: discord.PermissionOverwrite(send_messages=False, create_public_threads=False, create_private_threads=False),
+                                                                                             discord.utils.get(guild.roles, name="KaMS Club"): discord.PermissionOverwrite(send_messages=True)})
         else:
             async for message in justice_channel.history():
                 await message.delete()
