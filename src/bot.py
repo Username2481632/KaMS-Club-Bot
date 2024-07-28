@@ -272,9 +272,9 @@ async def on_ready() -> None:
     Event that runs when the bot is ready, syncing the commands and starting the day_change loop.
     """
     async with data_lock:
-        # logger.info("Bot is ready, starting to sync commands...")
-        # await bot.tree.sync()
-        # logger.info("Slash commands synced!")
+        logger.info("Bot is ready, starting to sync commands...")
+        await bot.tree.sync()
+        logger.info("Slash commands synced!")
         day_change.start()
         logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
 
@@ -341,7 +341,7 @@ def justice_score(data: DataType, member: discord.Member) -> tuple[float, dateti
     return data[member.id]["deep_score"], member.joined_at
 
 
-@tasks.loop(time=datetime.time(hour=2, minute=31, second=30))
+@tasks.loop(time=datetime.time(hour=0, minute=0, second=0))
 async def day_change() -> None:
     """
     Loop that runs every day at midnight to update the data and assign roles.
@@ -349,10 +349,10 @@ async def day_change() -> None:
     """
     async with data_lock:
         data: DataType = await load_data()
-        # Backup data
-        if not os.path.exists("../data_backup"):
-            os.makedirs("../data_backup")
-        save_data(data, "../data_backup/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json")  # Backup data
+        backup_file_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data_backup"))
+        if not os.path.exists(backup_file_path):
+            os.makedirs(backup_file_path)
+        save_data(data, backup_file_path + f"/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json")  # Backup data
 
         guild: discord.Guild | None = bot.get_guild(GUILD_ID)
         if guild is None:
