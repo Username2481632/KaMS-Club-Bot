@@ -129,7 +129,7 @@ def save_data(data: DataType, output_file: str = data_file) -> None:
     # Convert the keys to strings
     converted_data = {str(key): value for key, value in data.items()}
     with open(output_file, 'w') as file:
-        json.dump(converted_data, file)
+        json.dump(converted_data, file, indent=2)
 
 
 async def set_respect_role(guild: discord.Guild, member: discord.Member, score: float) -> None:
