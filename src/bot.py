@@ -341,7 +341,7 @@ def justice_score(data: DataType, member: discord.Member) -> tuple[float, dateti
     return data[member.id]["deep_score"], member.joined_at
 
 
-@tasks.loop(time=datetime.time(hour=2, minute=25, second=30))
+@tasks.loop(time=datetime.time(hour=2, minute=31, second=30))
 async def day_change() -> None:
     """
     Loop that runs every day at midnight to update the data and assign roles.
