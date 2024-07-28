@@ -252,7 +252,7 @@ async def intelli_timeout_member(member: discord.Member, minutes: float, data: D
         data[member.id]["suspended_timeout"] = new_duration.total_seconds()
     else:
         try:
-            await member.edit(timed_out_until=until, reason=f"Voted {vote_severity} by {member.display_name}.")
+            await member.edit(timed_out_until=until, reason=f"Voted {vote_severity} by a member.")
             logger.info(f"{member.display_name} has been timed out for {minutes} minutes.")
             if old_duration < TIMEOUT_NOTIFICATION_THRESHOLD < new_duration:
                 await dm_member(member, f"You have been timed out for {minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a moderator.")
