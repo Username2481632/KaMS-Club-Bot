@@ -168,16 +168,16 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
     :param severity:
     :return:
     """
+    # Make sure this isn't a dm
+    if interaction.guild is None:
+        # noinspection PyUnresolvedReferences
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+        return
+    if severity == 0.0:
+        # noinspection PyUnresolvedReferences
+        await interaction.response.send_message("You cannot vote with a severity of 0.", ephemeral=True)
+        return
     async with data_lock:
-        # Make sure this isn't a dm
-        if interaction.guild is None:
-            # noinspection PyUnresolvedReferences
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-            return
-        if severity == 0.0:
-            # noinspection PyUnresolvedReferences
-            await interaction.response.send_message("You cannot vote with a severity of 0.", ephemeral=True)
-            return
         data: DataType = await load_data()
         if interaction.user.id not in data:
             data[interaction.user.id] = default_user_entry
@@ -186,7 +186,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
         if -1.0 <= severity <= 1.0:
             if abs(severity) > data[interaction.user.id]["credits"]:
                 # noinspection PyUnresolvedReferences
-                await interaction.response.send_message(f"Insufficient credits! You only have {data[interaction.user.id]['credits']} credits remaining.", ephemeral=True, delete_after=10)
+                await interaction.response.send_message(f"Insufficient credits! You only have {data[interaction.user.id]['credits']} credits remaining.", ephemeral=True, delete_after=15)
                 logger.info(f"Insufficient credits for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
                 return
             else:
@@ -428,11 +428,15 @@ async def day_change() -> None:
     await justice_channel.send(message_content, allowed_mentions=discord.AllowedMentions.none())
 
     # Cleanup polls channel
+    deleted_count: int = 0
     for channel in guild.text_channels:
         if channel.name == "polls":
             async for message in channel.history(after=datetime.datetime(2024, 7, 21)):
                 if message.poll is None and not message.pinned and not message.content.startswith("[POLL]"):
                     await message.delete()
+                    deleted_count += 1
+    if deleted_count > 0:
+        logger.info(f"Deleted {deleted_count} non-poll messages in the polls channel.")
     logger.info("Full day change complete.")
 
 
@@ -458,7 +462,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
                     if data[after.id]["suspended_timeout"] > 0.0:
                         await after.timeout(datetime.timedelta(seconds=data[after.id]["suspended_timeout"]), reason="Resume timeout from before role necesitation.")
                     else:
-                        await after.timeout(None)
+                        await after.timeout(None, reason="Acquired necessary roles.")
                 except discord.errors.Forbidden:
                     logger.error(f"Forbidden to untimeout user \"{after.display_name}\" (id={after.id}) for role acquisition.")
                     return
