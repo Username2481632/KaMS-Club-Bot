@@ -341,7 +341,7 @@ def justice_score(data: DataType, member: discord.Member) -> tuple[float, dateti
     return data[member.id]["deep_score"], member.joined_at
 
 
-@tasks.loop(time=datetime.time(hour=2, minute=4, second=0))
+@tasks.loop(time=datetime.time(hour=0, minute=0, second=0))
 async def day_change() -> None:
     """
     Loop that runs every day at midnight to update the data and assign roles.
@@ -427,6 +427,7 @@ async def day_change() -> None:
         await justice_channel.send(message_content, allowed_mentions=discord.AllowedMentions.none())
 
         save_data(data)
+        logger.info("Data update complete.")
 
     # Cleanup polls channel
     for channel in guild.text_channels:
@@ -434,6 +435,7 @@ async def day_change() -> None:
             async for message in channel.history(after=datetime.datetime(2024, 7, 21)):
                 if message.poll is None and not message.pinned and not message.content.startswith("[POLL]"):
                     await message.delete()
+    logger.info("Full day change complete.")
 
 
 # When a user updates their roles, check if they have the required roles
