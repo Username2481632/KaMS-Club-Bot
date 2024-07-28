@@ -403,31 +403,29 @@ async def day_change() -> None:
                             logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
                     except discord.errors.Forbidden:
                         logger.error(f"Forbidden to timeout user \"{member.display_name}\" (id={member_id}) for missing required roles.")
-
-        # Make a leaderboard of the five justices
-        message_content: str = ""
-        i: int
-        for i, justice_member in enumerate(justices):
-            data[justice_member.id]["credits"] += (JUSTICE_COUNT - i) * 0.5
-            message_content += f"{i + 1}. {justice_member.mention}\n"
-        if not message_content:
-            message_content = "No justices have been determined yet."
-
-        justice_channel_category: discord.CategoryChannel | None = discord.utils.get(guild.categories, name=JUSTICE_CHANNEL_CATEGORY)
-        if justice_channel_category is None:
-            justice_channel_category = await guild.create_category(JUSTICE_CHANNEL_CATEGORY)
-        justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
-        if justice_channel is None:
-            justice_channel = await justice_channel_category.create_text_channel(JUSTICE_CHANNEL_NAME,
-                                                                                 overwrites={guild.default_role: discord.PermissionOverwrite(send_messages=False, create_public_threads=False, create_private_threads=False),
-                                                                                             discord.utils.get(guild.roles, name="KaMS Club"): discord.PermissionOverwrite(send_messages=True)})
-        else:
-            async for message in justice_channel.history():
-                await message.delete()
-        await justice_channel.send(message_content, allowed_mentions=discord.AllowedMentions.none())
-
         save_data(data)
-        logger.info("Data update complete.")
+    logger.info("Data update complete.")
+
+    # Make a leaderboard of the five justices
+    message_content: str = ""
+    i: int
+    for i, justice_member in enumerate(justices):
+        data[justice_member.id]["credits"] += (JUSTICE_COUNT - i) * 0.5
+        message_content += f"{i + 1}. {justice_member.mention}\n"
+    if not message_content:
+        message_content = "No justices have been determined yet."
+
+    justice_channel_category: discord.CategoryChannel | None = discord.utils.get(guild.categories, name=JUSTICE_CHANNEL_CATEGORY)
+    if justice_channel_category is None:
+        justice_channel_category = await guild.create_category(JUSTICE_CHANNEL_CATEGORY)
+    justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
+    if justice_channel is None:
+        justice_channel = await justice_channel_category.create_text_channel(JUSTICE_CHANNEL_NAME, overwrites={guild.default_role: discord.PermissionOverwrite(send_messages=False, create_public_threads=False, create_private_threads=False),
+                                                                                                               discord.utils.get(guild.roles, name="KaMS Club"): discord.PermissionOverwrite(send_messages=True)})
+    else:
+        async for message in justice_channel.history():
+            await message.delete()
+    await justice_channel.send(message_content, allowed_mentions=discord.AllowedMentions.none())
 
     # Cleanup polls channel
     for channel in guild.text_channels:
