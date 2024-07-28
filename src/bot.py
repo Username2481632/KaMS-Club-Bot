@@ -149,8 +149,8 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
 
     if score > 0:
         if disrespectful_role in member.roles:
-            await member.remove_roles(disrespectful_role)
-            await member.add_roles(respectful_role)
+            await member.remove_roles(disrespectful_role, reason=f"Respect score of {score} is positive.")
+            await member.add_roles(respectful_role, reason=f"Respect score of {score} is positive.")
             logger.info(f"{member.display_name} has been upgraded to 'Respectful :)'.")
     elif score < min(-1.0, -0.01 * sum(not memb.bot for memb in guild.members)):
         if respectful_role in member.roles:
@@ -208,11 +208,6 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
 
         # Send a message publicly
         public_message: str = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}."
-        # async for previous_message in interaction.channel.history(limit=1):
-        #     if previous_message.author == bot.user:
-        #         await previous_message.edit(content=f"{previous_message.content}\n{public_message}")
-        #         break
-        # else:
         await interaction.channel.send(public_message)
 
         try:
@@ -228,8 +223,7 @@ async def dm_member(member: discord.Member, message: str) -> None:
     :param member:
     :param message:
     """
-    if member.dm_channel is None:
-        await member.create_dm()
+
     try:
         await member.send(message)
     except discord.errors.Forbidden:
