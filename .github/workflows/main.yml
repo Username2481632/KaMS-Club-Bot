@@ -20,7 +20,19 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          script: pkill -f "[b]ot.py" || [ $? -eq 1 ]
+          script: |
+            pkill -f "[b]ot.py" || [ $? -eq 1 ]
+            TIMEOUT=60
+            START=$(date +%s)
+            while pgrep -f "[b]ot.py"; do
+              NOW=$(date +%s)
+              ELAPSED=$((NOW - START))
+              if [ $ELAPSED -ge $TIMEOUT ]; then
+                echo "Error: bot.py process did not stop within 1 minute."
+                exit 1
+              fi
+              sleep 1
+            done
 
       - name: Deploy to Raspberry Pi
         uses: appleboy/scp-action@v0.1.7
