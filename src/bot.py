@@ -208,23 +208,20 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
                 if target_member.timed_out_until is not None and (target_member.timed_out_until - discord.utils.utcnow()) > old_duration:
                     old_duration = target_member.timed_out_until - discord.utils.utcnow()
                 new_duration: datetime.timedelta = datetime.timedelta(minutes=timeout_minutes)
-                if severity > 0 and new_duration >= old_duration:
-                    return
-                if new_duration == old_duration:
-                    return
-                until: datetime.datetime = discord.utils.utcnow() + new_duration
-                if "suspended_timeout" in data[target_member.id]:
-                    data[target_member.id]["suspended_timeout"] = new_duration.total_seconds()
-                else:
-                    try:
-                        await target_member.edit(timed_out_until=until, reason=f"Voted {severity} by a member.")
-                        logger.info(f"{target_member.display_name} has been timed out for {timeout_minutes} minutes.")
-                        if old_duration < TIMEOUT_NOTIFICATION_THRESHOLD < new_duration:
-                            await dm_member(target_member,
-                                            f"You have been timed out for {timeout_minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a "
-                                            f"moderator.")
-                    except discord.errors.Forbidden:
-                        logger.error(f"Forbidden to timeout user \"{target_member.display_name}\" (id={target_member.id}).")
+                if (severity < 0 or new_duration < old_duration) and new_duration != old_duration:
+                    until: datetime.datetime = discord.utils.utcnow() + new_duration
+                    if "suspended_timeout" in data[target_member.id]:
+                        data[target_member.id]["suspended_timeout"] = new_duration.total_seconds()
+                    else:
+                        try:
+                            await target_member.edit(timed_out_until=until, reason=f"Voted {severity} by a member.")
+                            logger.info(f"{target_member.display_name} has been timed out for {timeout_minutes} minutes.")
+                            if old_duration < TIMEOUT_NOTIFICATION_THRESHOLD < new_duration:
+                                await dm_member(target_member,
+                                                f"You have been timed out for {timeout_minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a "
+                                                f"moderator.")
+                        except discord.errors.Forbidden:
+                            logger.error(f"Forbidden to timeout user \"{target_member.display_name}\" (id={target_member.id}).")
 
         save_data(data)
 
