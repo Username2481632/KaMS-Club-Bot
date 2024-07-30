@@ -252,17 +252,24 @@ async def dm_member(member: discord.Member, message: str) -> None:
         logger.error(f"Forbidden to send message to \"{member.display_name}\" (id={member.id}).")
 
 
+is_initialized = False
+
+
 @bot.event
 async def on_ready() -> None:
     """
     Event that runs when the bot is ready, syncing the commands and starting the day_change loop.
     """
+    global is_initialized
+    if is_initialized:
+        return
     async with data_lock:
         logger.info("Bot is ready, starting to sync commands...")
         await bot.tree.sync()
         logger.info("Slash commands synced!")
         day_change.start()
         logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
+    is_initialized = True
 
 
 @bot.event
