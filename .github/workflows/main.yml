@@ -23,15 +23,13 @@ jobs:
           script: |
             pkill -f "[b]ot.py" || [ $? -eq 1 ]
             TIMEOUT=60
-            START=$(date +%s)
             while pgrep -f "[b]ot.py"; do
-              NOW=$(date +%s)
-              ELAPSED=$((NOW - START))
-              if [ $ELAPSED -ge $TIMEOUT ]; then
-                echo "Error: bot.py process did not stop within 1 minute."
+              if [ $TIMEOUT -le 0 ]; then
+                echo "Error: bot.py did not stop within 60 seconds."
                 exit 1
               fi
               sleep 1
+              TIMEOUT=$((TIMEOUT-1))
             done
 
       - name: Deploy to Raspberry Pi
