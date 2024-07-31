@@ -24,7 +24,7 @@ jobs:
             TIMEOUT=60
             while pgrep -f "[b]ot.py" > /dev/null; do
               if [ $TIMEOUT -le 0 ]; then
-
+                echo "hi"
               fi
               sleep 1
               TIMEOUT=$((TIMEOUT-1))
