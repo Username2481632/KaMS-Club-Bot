@@ -218,7 +218,8 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
                             logger.info(f"{target_member.display_name} has been timed out for {timeout_minutes} minutes.")
                             if old_duration < TIMEOUT_NOTIFICATION_THRESHOLD < new_duration:
                                 await dm_member(target_member,
-                                                f"You have been timed out for {timeout_minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a "
+                                                f"You have been timed out for {timeout_minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out "
+                                                f"to a "
                                                 f"moderator.")
                         except discord.errors.Forbidden:
                             logger.error(f"Forbidden to timeout user \"{target_member.display_name}\" (id={target_member.id}).")
@@ -356,7 +357,7 @@ async def day_change() -> None:
                 data[member.id] = default_user_entry
         for member_id in data:
             if data[member_id]["shallow_score"] > 0:
-                data[member_id]["deep_score"] += max(0.0, math.log((data[member_id]["shallow_score"] + 0.05), member_count) + 0.7)
+                data[member_id]["deep_score"] += math.sqrt(data[member_id]["shallow_score"]) / (member_count ** (1 / 3))
                 data[member_id]["shallow_score"] = max(0.0, min(data[member_id]["deep_score"], 0.5))
             elif data[member_id]["shallow_score"] < 0:
                 data[member_id]["deep_score"] += data[member_id]["shallow_score"]
