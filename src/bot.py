@@ -470,9 +470,10 @@ async def shutdown() -> None:
     """
     Gracefully shuts down the bot.
     """
-    print('SIGTERM Received—Shutting Down'.center(shutil.get_terminal_size().columns, '='))
+    logger.info('SIGTERM Received—Shutting Down'.center(shutil.get_terminal_size().columns, '='))
     await data_lock.acquire()
     await bot.close()  # Gracefully close the Discord bot connection
+    logger.info('Shutdown Complete'.center(shutil.get_terminal_size().columns, '='))
 
 
 # noinspection PyUnusedLocal
