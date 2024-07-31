@@ -21,12 +21,10 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            pkill -f "[b]ot.py" || [ $? -eq 1 ]
             TIMEOUT=60
             while pgrep -f "[b]ot.py" > /dev/null; do
               if [ $TIMEOUT -le 0 ]; then
-                echo "Error: timed out while waiting for bot.py to stop"
-                exit 1
+
               fi
               sleep 1
               TIMEOUT=$((TIMEOUT-1))
