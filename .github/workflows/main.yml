@@ -25,7 +25,7 @@ jobs:
             TIMEOUT=60
             while pgrep -f "[b]ot.py" > /dev/null; do
               if [ $TIMEOUT -le 0 ]; then
-                echo "Error: bot.py did not stop within 60 seconds."
+                echo "Error: timed out while waiting for bot.py to stop"
                 exit 1
               fi
               sleep 1
