@@ -22,15 +22,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             pkill -f "[b]ot.py" || [ $? -eq 1 ]
-            TIMEOUT=60
-            while pgrep -f "[b]ot.py"; do
-              if [ $TIMEOUT -le 0 ]; then
-                echo "Error: bot.py did not stop within 60 seconds."
-                exit 1
-              fi
-              sleep 1
-              TIMEOUT=$((TIMEOUT-1))
-            done
+            while pgrep -f "[b]ot.py" > /dev/null; do sleep 1; done
 
       - name: Deploy to Raspberry Pi
         uses: appleboy/scp-action@v0.1.7
