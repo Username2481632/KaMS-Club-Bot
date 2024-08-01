@@ -416,6 +416,7 @@ async def day_change() -> None:
     justice_channel_category: discord.CategoryChannel | None = discord.utils.get(guild.categories, name=JUSTICE_CHANNEL_CATEGORY)
     if justice_channel_category is None:
         justice_channel_category = await guild.create_category(JUSTICE_CHANNEL_CATEGORY)
+        assert justice_channel_category is not None
     justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
     if justice_channel is None:
         justice_channel = await justice_channel_category.create_text_channel(JUSTICE_CHANNEL_NAME, overwrites={guild.default_role: discord.PermissionOverwrite(send_messages=False, create_public_threads=False, create_private_threads=False),
