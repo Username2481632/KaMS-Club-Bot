@@ -162,9 +162,10 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
 
 
 @bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
-async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float) -> None:
+async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float, reason: str) -> None:
     """
     Vote for a user with a severity ranging from -1 to 1.
+    :param reason:
     :param interaction:
     :param target:
     :param severity:
@@ -229,7 +230,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
         save_data(data)
 
         # Send a message publicly
-        public_message: str = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}."
+        public_message: str = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}. Reason: \"{reason}\""
         await interaction.channel.send(public_message)
 
         try:
