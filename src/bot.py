@@ -31,6 +31,8 @@ GUILD_ID: int = 1201368154174144602
 JUSTICE_COUNT: int = 5
 JUSTICE_CHANNEL_NAME: str = "justices"
 JUSTICE_CHANNEL_CATEGORY: str = "Information"
+RESPECTFUL_ROLE_NAME: str = "Respectful :)"
+DISRESPECTFUL_ROLE_NAME: str = "Disrespectful :("
 TIMEOUT_THRESHOLD: float = -0.5  # If a member's shallow score falls below this value, member gets timed out
 TIMEOUT_NOTIFICATION_THRESHOLD: datetime.timedelta = datetime.timedelta(minutes=0.5)  # If a member gets timed out for more than this, member gets notified
 TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0, TIMEOUT_THRESHOLD: TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds() / 60.0, -1.0: 10.0, -2.0: 300.0, -3.0: 10080.0, -4.0: 10080.0}  # Score: Timeout duration (minutes)
@@ -140,23 +142,23 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
     :param score:
     :return:
     """
-    disrespectful_role: discord.Role | None = discord.utils.get(guild.roles, name="Disrespectful :(")
-    respectful_role: discord.Role | None = discord.utils.get(guild.roles, name="Respectful :)")
+    disrespectful_role: discord.Role | None = discord.utils.get(guild.roles, name=DISRESPECTFUL_ROLE_NAME)
+    respectful_role: discord.Role | None = discord.utils.get(guild.roles, name=RESPECTFUL_ROLE_NAME)
 
     if disrespectful_role is None or respectful_role is None:
-        logger.error("The 'Disrespectful :(' or 'Respectful :)' role does not exist.")
+        logger.error(f"The '{DISRESPECTFUL_ROLE_NAME}' or '{RESPECTFUL_ROLE_NAME}' role does not exist.")
         return
 
     if score > 0:
         if disrespectful_role in member.roles:
             await member.remove_roles(disrespectful_role, reason=f"Respect score of {score} is positive.")
             await member.add_roles(respectful_role, reason=f"Respect score of {score} is positive.")
-            logger.info(f"{member.display_name} has been upgraded to 'Respectful :)'.")
+            logger.info(f"{member.display_name} has been upgraded to '{RESPECTFUL_ROLE_NAME}'.")
     elif score < min(-1.0, -0.01 * sum(not memb.bot for memb in guild.members)):
         if respectful_role in member.roles:
             await member.remove_roles(respectful_role)
             await member.add_roles(disrespectful_role)
-            logger.info(f"{member.display_name} has been downgraded to 'Disrespectful :('.")
+            logger.info(f"{member.display_name} has been downgraded to '{DISRESPECTFUL_ROLE_NAME}'.")
 
 
 @bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
@@ -169,7 +171,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
     :return:
     """
     # Make sure this isn't a dm
-    if interaction.guild is None:
+    if interaction.guild is None or type(interaction.user) is discord.User:
         # noinspection PyUnresolvedReferences
         await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
@@ -180,9 +182,10 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
     async with data_lock:
         data: DataType = await load_data()
         if interaction.user.id not in data:
-            data[interaction.user.id] = default_user_entry
-        if target.id not in data:
-            data[target.id] = default_user_entry
+            await on_member_join(interaction.user)
+        target_member: discord.Member | None = interaction.guild.get_member(target.id)
+        if target.id not in data and target_member is not None:
+            await on_member_join(target_member)
         if -1.0 <= severity <= 1.0:
             if abs(severity) > data[interaction.user.id]["credits"]:
                 # noinspection PyUnresolvedReferences
@@ -198,7 +201,6 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
             return
 
         data[target.id]["shallow_score"] = float(Decimal(str(data[target.id]["shallow_score"])) + Decimal(str(severity)))
-        target_member: discord.Member | None = interaction.guild.get_member(target.id)
         if target_member is not None:
             await set_respect_role(interaction.guild, target_member, data[target.id]["shallow_score"])
             if data[target.id]["shallow_score"] < (TIMEOUT_THRESHOLD + 1.0):
@@ -281,8 +283,12 @@ async def on_member_join(member: discord.Member) -> None:
     if member.bot:
         return
     # DM the member
-    await dm_member(member,
-                    "Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. Thanks!")
+    sending_message: str = ""
+    # If the member joined over 5 minutes ago
+    if (discord.utils.utcnow() - member.joined_at).total_seconds() > 300:
+        sending_message += "With apologies for the delay,\n"
+    sending_message += "Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. Thanks!"
+    await dm_member(member, sending_message)
     async with data_lock:
         data: DataType = await load_data()
         if not member.id in data:
@@ -302,6 +308,7 @@ async def on_member_join(member: discord.Member) -> None:
                             break
 
         await set_respect_role(member.guild, member, data[member.id]["shallow_score"])
+    logger.info(f"{member.display_name} has been welcomed to the server and their roles have been set.")
 
 
 async def set_justice_role(member: discord.Member, justice_ids: list[int]) -> None:
@@ -354,7 +361,7 @@ async def day_change() -> None:
             if not member.bot:
                 member_count += 1
             if member.id not in data:
-                data[member.id] = default_user_entry
+                await on_member_join(member)
         for member_id in data:
             if data[member_id]["shallow_score"] > 0:
                 data[member_id]["deep_score"] += math.sqrt(data[member_id]["shallow_score"]) / (member_count ** (1 / 3))
@@ -422,7 +429,8 @@ async def day_change() -> None:
     deleted_count: int = 0
     for channel in guild.text_channels:
         if channel.name == "polls":
-            async for message in channel.history(after=datetime.datetime(2024, 7, 21)):
+            # after one week ago
+            async for message in channel.history(after=discord.utils.utcnow() - datetime.timedelta(days=7)):
                 if message.poll is None and not message.pinned and not message.content.startswith("[POLL]"):
                     await message.delete()
                     deleted_count += 1
@@ -447,7 +455,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
         async with data_lock:
             data: DataType = await load_data()
             if not after.id in data:
-                data[after.id] = default_user_entry
+                await on_member_join(after)
             if "suspended_timeout" in data[after.id]:
                 try:
                     if data[after.id]["suspended_timeout"] > 0.0:
