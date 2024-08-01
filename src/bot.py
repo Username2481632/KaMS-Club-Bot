@@ -484,7 +484,6 @@ async def shutdown() -> None:
     """
     Gracefully shuts down the bot.
     """
-    logger.info('SIGTERM Received—Shutting Down'.center(shutil.get_terminal_size().columns, '='))
     await data_lock.acquire()
     await bot.close()  # Gracefully close the Discord bot connection
     logger.info('Shutdown Complete'.center(shutil.get_terminal_size().columns, '='))
@@ -497,6 +496,7 @@ def signal_handler(sig: int, frame: FrameType | None) -> None:
     :param sig:
     :param frame:
     """
+    logger.info('SIGTERM Received—Shutting Down'.center(shutil.get_terminal_size().columns, '='))
     loop = asyncio.get_event_loop()
     loop.create_task(shutdown())
 
