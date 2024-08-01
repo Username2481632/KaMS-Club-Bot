@@ -283,16 +283,19 @@ async def on_member_join(member: discord.Member) -> None:
     # Ensure the member is not a bot
     if member.bot:
         return
-    # DM the member
-    sending_message: str = ""
-    # If the member joined over 5 minutes ago
-    if (discord.utils.utcnow() - member.joined_at).total_seconds() > 300:
-        sending_message += "With apologies for the delay,\n"
-    sending_message += "Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. Thanks!"
-    await dm_member(member, sending_message)
+
     async with data_lock:
         data: DataType = await load_data()
         if not member.id in data:
+            # DM the member
+            sending_message: str = ""
+            # If the member joined over 5 minutes ago
+            if (discord.utils.utcnow() - member.joined_at).total_seconds() > 300:
+                sending_message += "With apologies for the delay,\n"
+            sending_message += ("Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. "
+                                "Thanks!")
+            await dm_member(member, sending_message)
+
             data[member.id] = default_user_entry
             save_data(data)
         else:
