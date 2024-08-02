@@ -397,11 +397,11 @@ async def day_change() -> None:
                 member_role_ids: set[int] = set(rl.id for rl in member.roles)
                 if not all(member_role_ids & role_category for role_category in REQUIRED_ROLES):
                     try:
-                        await member.timeout(MISSING_ROLE_TIMEOUT_DURATION, reason="Missing required roles.")
                         if "suspended_timeout" not in data[member_id]:
-                            is_timed_out: bool = member.timed_out_until is not None and member.timed_out_until > discord.utils.utcnow()
-                            data[member_id]["suspended_timeout"] = 0.0 if not is_timed_out else max(0.0, (member.timed_out_until - discord.utils.utcnow()).total_seconds())
-                            await dm_member(member, MISSING_ROLE_MESSAGE(is_timed_out))
+                            was_timed_out: bool = member.timed_out_until is not None and member.timed_out_until > discord.utils.utcnow()
+                            data[member_id]["suspended_timeout"] = 0.0 if not was_timed_out else max(0.0, (member.timed_out_until - discord.utils.utcnow()).total_seconds())
+                            await member.timeout(MISSING_ROLE_TIMEOUT_DURATION, reason="Missing required roles.")
+                            await dm_member(member, MISSING_ROLE_MESSAGE(was_timed_out))
                             logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
                     except discord.errors.Forbidden:
                         logger.error(f"Forbidden to timeout user \"{member.display_name}\" (id={member_id}) for missing required roles.")
