@@ -283,7 +283,7 @@ async def on_member_join(member: discord.Member) -> None:
     # Ensure the member is not a bot
     if member.bot:
         return
-
+    message_sent: bool = False
     async with data_lock:
         data: DataType = await load_data()
         if not member.id in data:
@@ -295,6 +295,7 @@ async def on_member_join(member: discord.Member) -> None:
             sending_message += ("Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. "
                                 "Thanks!")
             await dm_member(member, sending_message)
+            message_sent = True
 
             data[member.id] = default_user_entry
             save_data(data)
@@ -312,7 +313,7 @@ async def on_member_join(member: discord.Member) -> None:
                             break
 
         await set_respect_role(member.guild, member, data[member.id]["shallow_score"])
-    logger.info(f"{member.display_name} has been welcomed to the server and their roles have been set.")
+    logger.info(f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time)" if not message_sent else ""} and their roles have been set.")
 
 
 async def set_justice_role(member: discord.Member, justice_ids: list[int]) -> None:
