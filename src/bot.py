@@ -400,8 +400,8 @@ async def day_change() -> None:
                     try:
                         if "suspended_timeout" not in data[member_id]:
                             was_timed_out: bool = member.timed_out_until is not None and member.timed_out_until > discord.utils.utcnow()
-                            data[member_id]["suspended_timeout"] = 0.0 if not was_timed_out else max(0.0, (member.timed_out_until - discord.utils.utcnow()).total_seconds())
                             await member.timeout(MISSING_ROLE_TIMEOUT_DURATION, reason="Missing required roles.")
+                            data[member_id]["suspended_timeout"] = 0.0 if not was_timed_out else max(0.0, (member.timed_out_until - discord.utils.utcnow()).total_seconds())
                             await dm_member(member, MISSING_ROLE_MESSAGE(was_timed_out))
                             logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
                     except discord.errors.Forbidden:
