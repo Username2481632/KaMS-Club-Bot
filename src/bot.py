@@ -206,7 +206,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
             await set_respect_role(interaction.guild, target_member, data[target.id]["shallow_score"])
             if data[target.id]["shallow_score"] < (TIMEOUT_THRESHOLD + 1.0):
                 # Timeout procedure
-                timeout_minutes = calculate_timeout(data[target.id]["shallow_score"])
+                timeout_minutes = calculate_timeout(data[target.id]["shallow_score"] + max(0.0, min(data[target.id]["deep_score"], 0.5)))
                 old_duration: datetime.timedelta = datetime.timedelta()
                 if target_member.timed_out_until is not None and (target_member.timed_out_until - discord.utils.utcnow()) > old_duration:
                     old_duration = target_member.timed_out_until - discord.utils.utcnow()
@@ -370,7 +370,7 @@ async def day_change() -> None:
         for member_id in data:
             if data[member_id]["shallow_score"] > 0:
                 data[member_id]["deep_score"] += math.sqrt(data[member_id]["shallow_score"]) / (member_count ** (1 / 3))
-                data[member_id]["shallow_score"] = max(0.0, min(data[member_id]["deep_score"], 0.5))
+                data[member_id]["shallow_score"] = 0.0
             elif data[member_id]["shallow_score"] < 0:
                 data[member_id]["deep_score"] += data[member_id]["shallow_score"]
             elif data[member_id]["deep_score"] > 0.1:
