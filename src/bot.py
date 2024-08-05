@@ -152,11 +152,13 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
     if score > 0:
         if disrespectful_role in member.roles:
             await member.remove_roles(disrespectful_role, reason=f"Respect score of {score} is positive.")
+        if respectful_role in member.roles:
             await member.add_roles(respectful_role, reason=f"Respect score of {score} is positive.")
             logger.info(f"{member.display_name} has been upgraded to '{RESPECTFUL_ROLE_NAME}'.")
     elif score < min(-1.0, -0.01 * sum(not memb.bot for memb in guild.members)):
         if respectful_role in member.roles:
-            await member.remove_roles(respectful_role)
+            await member.remove_roles(respectful_role, reason=f"Respect score of {score} is unacceptably bad.")
+        if disrespectful_role not in member.roles:
             await member.add_roles(disrespectful_role)
             logger.info(f"{member.display_name} has been downgraded to '{DISRESPECTFUL_ROLE_NAME}'.")
 
