@@ -465,7 +465,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
             if "suspended_timeout" in data[after.id]:
                 try:
                     if data[after.id]["suspended_timeout"] > 0.0:
-                        await after.timeout(datetime.timedelta(seconds=data[after.id]["suspended_timeout"]), reason="Resume timeout from before role necesitation.")
+                        await after.timeout(datetime.timedelta(seconds=data[after.id]["suspended_timeout"]), reason="Resume timeout from before role-acquisition obligation.")
                     else:
                         await after.timeout(None, reason="Acquired necessary roles.")
                 except discord.errors.Forbidden:
