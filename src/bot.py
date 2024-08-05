@@ -26,7 +26,7 @@ os.environ['TZ'] = 'UTC'
 time.tzset()
 
 # Parameters
-MEMBER_CREDITS: float = 1
+MEMBER_CREDITS: float = 0.75
 GUILD_ID: int = 1201368154174144602
 JUSTICE_COUNT: int = 5
 JUSTICE_CHANNEL_NAME: str = "justices"
