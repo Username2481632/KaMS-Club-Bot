@@ -38,6 +38,7 @@ TIMEOUT_NOTIFICATION_THRESHOLD: datetime.timedelta = datetime.timedelta(minutes=
 TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0, TIMEOUT_THRESHOLD: TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds() / 60.0, -1.0: 10.0, -2.0: 300.0, -3.0: 10080.0, -4.0: 10080.0}  # Score: Timeout duration (minutes)
 CREDIT_THRESHOLD: float = 1.0  # Deep score threshold above which a member receives full credits
 MIN_CREDITS: float = 0.375  # Number of credits given to members under the CREDIT_THRESHOLD
+# TODO: better credit segmentation using a dictionary
 REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1261372426382737610, 1261371054161662044},
                                   {1256626845970075779, 1256627378763993189}]  # Ids of roles that are required to access the server
 MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
@@ -232,7 +233,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
         save_data(data)
 
         # Send a message publicly
-        public_message: str = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}. Reason: \"{reason}\""
+        public_message: str = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}. Reason: \`{reason}\`"
         await interaction.channel.send(public_message)
 
         try:
