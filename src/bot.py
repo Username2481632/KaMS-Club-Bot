@@ -233,7 +233,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
         save_data(data)
 
         # Send a message publicly
-        public_message: str = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}. Reason: **\`**{reason}**\`**"
+        public_message: str = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}. Reason: {reason}"
         await interaction.channel.send(public_message)
 
         try:
