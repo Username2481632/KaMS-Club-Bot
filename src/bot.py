@@ -26,19 +26,16 @@ os.environ['TZ'] = 'UTC'
 time.tzset()
 
 # Parameters
-MEMBER_CREDITS: float = 0.75
 GUILD_ID: int = 1201368154174144602
 JUSTICE_COUNT: int = 5
 JUSTICE_CHANNEL_NAME: str = "justices"
 JUSTICE_CHANNEL_CATEGORY: str = "Information"
 RESPECTFUL_ROLE_NAME: str = "Respectful :)"
 DISRESPECTFUL_ROLE_NAME: str = "Disrespectful :("
-TIMEOUT_THRESHOLD: float = -0.5  # If a member's shallow score falls below this value, member gets timed out
+TIMEOUT_THRESHOLD: float = -0.3  # If a member's shallow score falls below this value, member gets timed out
 TIMEOUT_NOTIFICATION_THRESHOLD: datetime.timedelta = datetime.timedelta(minutes=0.5)  # If a member gets timed out for more than this, member gets notified
-TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0, TIMEOUT_THRESHOLD: TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds() / 60.0, -1.0: 10.0, -2.0: 300.0, -3.0: 10080.0, -4.0: 10080.0}  # Score: Timeout duration (minutes)
-CREDIT_THRESHOLD: float = 1.0  # Deep score threshold above which a member receives full credits
-MIN_CREDITS: float = 0.375  # Number of credits given to members under the CREDIT_THRESHOLD
-# TODO: better credit segmentation using a dictionary
+TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0, TIMEOUT_THRESHOLD: TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds() / 60.0, -1.0: 20.0, -2.0: 300.0, -3.0: 10080.0, -4.0: 10080.0}  # Score: Timeout duration (minutes)
+CREDIT_THRESHOLDS = {0.0: 0.0, 0.2: 0.125, 0.25: 0.1875, 0.5: 0.5, 1.0: 0.875}  # deep_score threshold: credits
 REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1261372426382737610, 1261371054161662044},
                                   {1256626845970075779, 1256627378763993189}]  # Ids of roles that are required to access the server
 MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
@@ -103,8 +100,25 @@ def calculate_timeout(x: float) -> float:
 x_values: np.ndarray = np.linspace(min(x_coords), max(x_coords), 500)
 y_values: np.ndarray = linear_interp(x_values)
 
+# Extract the keys and values from the CREDIT_THRESHOLDS dictionary
+thresholds = np.array(list(CREDIT_THRESHOLDS.keys()))
+credit_allocations = np.array(list(CREDIT_THRESHOLDS.values()))
+
+# Create an interpolation function
+credit_calculation_function = interp1d(thresholds, credit_allocations, kind="previous", fill_value="extrapolate")
+
+
+def compute_credits(deep_score: float) -> float:
+    """
+    Compute the credits based on the deep score.
+    :param deep_score:
+    :return:
+    """
+    return float(credit_calculation_function(deep_score))
+
+
 # Helper function to load data from JSON file
-default_user_entry: dict[str, float] = {"shallow_score": 0.0, "deep_score": 0.0, "credits": MIN_CREDITS}
+default_user_entry: dict[str, float] = {"shallow_score": 0.0, "deep_score": 0.0, "credits": compute_credits(0.0)}
 
 DataType = dict[int, dict[str, float]]
 
@@ -391,10 +405,7 @@ async def day_change() -> None:
 
             if member is not None:
                 await set_justice_role(member, [j.id for j in justices])
-            if data[member_id]["deep_score"] < CREDIT_THRESHOLD:
-                data[member_id]["credits"] = MIN_CREDITS
-            else:
-                data[member_id]["credits"] = MEMBER_CREDITS
+            data[member_id]["credits"] = compute_credits(data[member_id]["deep_score"])
 
             # Timeout members that are missing required roles
             if member is not None and not member.bot:
