@@ -268,8 +268,8 @@ async def slash_credits(interaction: discord.Interaction) -> None:
         data: DataType = await load_data()
         if interaction.user.id not in data:
             await on_member_join(interaction.user)
-        # noinspection PyUnresolvedReferences
         try:
+            # noinspection PyUnresolvedReferences
             await interaction.response.send_message(f"You have {data[interaction.user.id]['credits']} credits remaining.", ephemeral=True)
         except discord.errors.NotFound:
             logger.error(f"Interaction not found to send credit count to \"{interaction.user.display_name}\". Processing may have taken too long.")
