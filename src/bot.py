@@ -256,6 +256,19 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
         except discord.errors.NotFound:
             logger.error(f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long.")
 
+@bot.tree.command(name="credits", description="Check the number of credits you have.")
+async def slash_credits(interaction: discord.Interaction) -> None:
+    """
+    Check the number of credits a user has.
+    :param interaction:
+    :return:
+    """
+    async with data_lock:
+        data: DataType = await load_data()
+        if interaction.user.id not in data:
+            await on_member_join(interaction.user)
+        # noinspection PyUnresolvedReferences
+        await interaction.response.send_message(f"You have {data[interaction.user.id]['credits']} credits remaining.", ephemeral=True)
 
 async def dm_member(member: discord.Member, message: str) -> None:
     """
