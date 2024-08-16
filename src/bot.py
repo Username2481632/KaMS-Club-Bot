@@ -256,6 +256,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
         except discord.errors.NotFound:
             logger.error(f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long.")
 
+
 @bot.tree.command(name="credits", description="Check the number of credits you have.")
 async def slash_credits(interaction: discord.Interaction) -> None:
     """
@@ -272,6 +273,7 @@ async def slash_credits(interaction: discord.Interaction) -> None:
             await interaction.response.send_message(f"You have {data[interaction.user.id]['credits']} credits remaining.", ephemeral=True)
         except discord.errors.NotFound:
             logger.error(f"Interaction not found to send credit count to \"{interaction.user.display_name}\". Processing may have taken too long.")
+
 
 async def dm_member(member: discord.Member, message: str) -> None:
     """
