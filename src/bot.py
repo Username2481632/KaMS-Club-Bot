@@ -420,6 +420,11 @@ async def day_change() -> None:
                             logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
                     except discord.errors.Forbidden:
                         logger.error(f"Forbidden to timeout user \"{member.display_name}\" (id={member_id}) for missing required roles.")
+        # If less than 10% of members have any credits, give everyone exactly 0.1 credits
+        if sum(1 for member_id in data if data[member_id]["credits"] > 0.0) < 0.1 * len(data):
+            for member_id in data:
+                data[member_id]["credits"] = 0.1
+
         save_data(data)
     logger.info("Data update complete.")
 
