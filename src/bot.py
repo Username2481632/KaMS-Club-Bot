@@ -296,6 +296,7 @@ async def on_ready() -> None:
     """
     Event that runs when the bot is ready, syncing the commands and starting the day_change loop.
     """
+
     global is_initialized
     if is_initialized:
         return
@@ -348,7 +349,7 @@ async def on_member_join(member: discord.Member) -> None:
                             break
 
         await set_respect_role(member.guild, member, data[member.id]["shallow_score"])
-    logger.info(f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time)" if not message_sent else ""} and their roles have been set.")
+    logger.info(f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time) " if not message_sent else ""}and their roles have been set.")
 
 
 async def set_justice_role(member: discord.Member, justice_ids: list[int]) -> None:
