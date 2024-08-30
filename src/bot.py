@@ -46,6 +46,7 @@ ROLE_RESTORATION_MESSAGE = "You have been untimed out due to acquiring the neces
 LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 MISSING_ROLE_TIMEOUT_DURATION: datetime.timedelta = datetime.timedelta(days=2)
 JUSTICE_DEEP_SCORE_REQUIREMENT: float = 1.5
+DAY_CHANGE_TIME: datetime.time = datetime.time(hour=0, minute=0, second=0)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -380,7 +381,7 @@ def justice_score(data: DataType, member: discord.Member) -> tuple[float, dateti
     return data[member.id]["deep_score"], member.joined_at
 
 
-@tasks.loop(time=datetime.time(hour=0, minute=0, second=0))
+@tasks.loop(time=DAY_CHANGE_TIME)
 async def day_change() -> None:
     """
     Loop that runs every day at midnight to update the data and assign roles.
