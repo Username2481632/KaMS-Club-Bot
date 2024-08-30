@@ -10,7 +10,9 @@ import math
 import os
 import shutil
 import signal
+import sys
 import time
+import traceback
 from decimal import Decimal
 from types import FrameType
 from typing import Callable
@@ -543,6 +545,23 @@ def signal_handler(sig: int, frame: FrameType | None) -> None:
 
 # Register the signal handler for SIGTERM
 signal.signal(signal.SIGTERM, signal_handler)
+
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+    # Print the error and stack trace
+    print("Unhandled exception occurred:")
+    traceback.print_exception(exc_type, exc_value, exc_traceback)
+
+    # Optional: delay before restarting
+    time.sleep(2)
+
+    # Restart the script
+    print("Restarting script...")
+    os.execv(sys.executable, ['python3.12'] + sys.argv)
+
+
+# Register the global exception handler
+sys.excepthook = handle_exception
 
 # Run the bot
 bot.run(TOKEN, log_handler=console_handler, log_formatter=formatter)
