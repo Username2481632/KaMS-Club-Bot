@@ -548,6 +548,13 @@ signal.signal(signal.SIGTERM, signal_handler)
 
 
 def handle_exception(exc_type, exc_value, exc_traceback):
+    """
+    Global exception handler that restarts the script on an unhandled exception.
+
+    :param exc_type:
+    :param exc_value:
+    :param exc_traceback:
+    """
     # Print the error and stack trace
     print("Unhandled exception occurred:")
     traceback.print_exception(exc_type, exc_value, exc_traceback)
