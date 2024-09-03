@@ -54,6 +54,8 @@ DAY_CHANGE_TIME: datetime.time = datetime.time(hour=0, minute=0, second=0)
 JUSTICE_ROLE_NAME = "Justice"
 ERROR_SYMBOL = ":x:"
 SUCCESS_SYMBOL = ":white_check_mark:"
+ELARA_LOGGER_ID: int = 1274076825009655863
+LOGGER_CHANNEL_NAME: str = "logger"
 
 # Load environment variables from .env file
 load_dotenv()
@@ -542,9 +544,16 @@ async def day_change() -> None:
                 member_role_ids: set[int] = set(rl.id for rl in member.roles)
                 if not all(member_role_ids & role_category for role_category in REQUIRED_ROLES):
                     try:
+                        was_timed_out: bool = member.timed_out_until is not None and member.timed_out_until > discord.utils.utcnow()
                         await member.timeout(MISSING_ROLE_TIMEOUT_DURATION, reason="Missing required roles.")
+                        # Delete Elara's message in #logger
+                        if was_timed_out:
+                            logger_channel: discord.TextChannel | None = discord.utils.get(guild.text_channels, name=LOGGER_CHANNEL_NAME)
+                            if logger_channel is not None:
+                                async for message in logger_channel.history(limit=3):
+                                    if message.author.id == ELARA_LOGGER_ID and message.content.startswith("Member Timeout: Updated") and message.mentions[0].id == member.id:
+                                        await message.delete()
                         if "suspended_timeout" not in data[member_id]:
-                            was_timed_out: bool = member.timed_out_until is not None and member.timed_out_until > discord.utils.utcnow()
                             data[member_id]["suspended_timeout"] = 0.0 if not was_timed_out else max(0.0, (member.timed_out_until - discord.utils.utcnow()).total_seconds())
                             await dm_member(member, MISSING_ROLE_MESSAGE(was_timed_out))
                             logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
