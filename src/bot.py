@@ -1,6 +1,8 @@
 """
 This bot is designed to manage the KaMS Club Discord server. It assigns roles to members based on their behavior and the roles they have. It also allows members to vote on other members with a severity ranging from -1 to 1. The bot will
 automatically time out members with low respect scores and notify them if they have been timed out for more than a certain amount of time. The bot also assigns the Justice role to the top five members with the highest respect scores.
+
+Due to a Discord limitation, you must restrict the /justice_toolbox command visibility to the Justice role manually. To do this, go to server settings -> integrations -> click on "KaMS Club" (manage).
 """
 import asyncio
 import datetime
@@ -49,6 +51,9 @@ LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 MISSING_ROLE_TIMEOUT_DURATION: datetime.timedelta = datetime.timedelta(days=2)
 JUSTICE_DEEP_SCORE_REQUIREMENT: float = 1.5
 DAY_CHANGE_TIME: datetime.time = datetime.time(hour=0, minute=0, second=0)
+JUSTICE_ROLE_NAME = "Justice"
+ERROR_SYMBOL = ":x:"
+SUCCESS_SYMBOL = ":white_check_mark:"
 
 # Load environment variables from .env file
 load_dotenv()
@@ -61,7 +66,7 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 intents.guilds = True
-bot = commands.Bot(command_prefix='/', intents=intents)
+bot = commands.Bot(command_prefix='', intents=intents)
 
 # Path to the data file
 data_file: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data.json"))
@@ -181,7 +186,110 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
             logger.info(f"{member.display_name} has been downgraded to '{DISRESPECTFUL_ROLE_NAME}'.")
 
 
-@bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
+@bot.event
+async def on_message(message: discord.Message) -> None:
+    """
+
+    :param message:
+    """
+    pass
+
+
+class JusticeToolboxView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Set Slowmode", style=discord.ButtonStyle.primary)
+    async def set_slowmode(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """
+
+        :param interaction:
+        :param button:
+        """
+        modal = SetSlowmodeModal()
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Request Ban", style=discord.ButtonStyle.danger)
+    async def request_ban(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """
+
+        :param interaction:
+        :param button:
+        """
+        modal = RequestBanModal()
+        await interaction.response.send_modal(modal)
+
+
+class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode"):
+    length = discord.ui.TextInput(label="Length (seconds)", required=True)
+    reset_time = discord.ui.TextInput(label="Reset Time (optional)", required=False)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Validate input for length
+        try:
+            length = int(self.length.value)
+            if length < 0:
+                raise ValueError("Slowmode must be a non-negative integer.")
+        except ValueError:
+            await interaction.response.edit_message(content=f"{ERROR_SYMBOL} Invalid slowmode length. Slowmode must be a non-negative integer.")
+            return
+
+        # Optional reset time validation
+        reset_time: int | None = None
+        if self.reset_time.value:
+            try:
+                reset_time = int(self.reset_time.value)
+                if reset_time <= 0:
+                    raise ValueError("Reset time must be a positive number.")
+            except ValueError:
+                await interaction.response.edit_message(content=f"{ERROR_SYMBOL} Invalid reset time. Please enter a positive number.")
+                return
+
+        if length < 0:
+            await interaction.response.edit_message(content=f"{ERROR_SYMBOL} Slowmode must be a non-negative integer.")
+            return
+        try:
+            await interaction.channel.edit(slowmode_delay=length)
+            await interaction.response.edit_message(content=f"{SUCCESS_SYMBOL} Slowmode has been set to {length} second{"s" if length != 1 else ""} {f"with a reset time of {reset_time} seconds" if reset_time is not None else ''}.")
+        except discord.errors.Forbidden:
+            await interaction.response.edit_message(f"{ERROR_SYMBOL} I do not have permission to set slowmode in this channel.")
+
+
+class RequestBanModal(discord.ui.Modal, title="Request Ban"):
+    user = discord.ui.TextInput(label="User ID to Ban", required=True, placeholder="012345678910111213")
+    reason = discord.ui.TextInput(label="Reason for Ban", style=discord.TextStyle.paragraph, required=True, min_length=20)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            user_id = int(self.user.value)
+            user_object: discord.User = await bot.fetch_user(user_id)
+        except (ValueError, discord.errors.NotFound):
+            # noinspection PyUnresolvedReferences
+            await interaction.response.edit_message(content=f"{ERROR_SYMBOL} Invalid user ID. Please enter a valid user ID.")
+            return
+
+        reason = self.reason.value
+        # Implement your logic to handle ban requests here
+        await interaction.response.edit_message(f"{SUCCESS_SYMBOL} Ban request submitted for user \"{user_object.display_name}\": {reason}.")
+
+
+@bot.tree.command(name="justice_toolbox", description="Access the Justice Toolbox.", guild=discord.Object(id=GUILD_ID))
+async def slash_justice_toolbox(interaction: discord.Interaction) -> None:
+    """
+    Access the Justice Toolbox.
+    :param interaction:
+    """
+    justice_role: discord.Role | None = discord.utils.get(interaction.guild.roles, name=JUSTICE_ROLE_NAME)
+    if justice_role is None:
+        logger.error("The 'Justice' role does not exist in the guild. Error accessing it for the Justice Toolbox.")
+        return
+    if justice_role not in interaction.user.roles:
+        await interaction.response.send_message("You must be a Justice to access the Justice Toolbox.", ephemeral=True)
+        return
+    await interaction.response.send_message("Justice Toolbox", view=JusticeToolboxView(), ephemeral=True)
+
+
+@bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.", guild=discord.Object(id=GUILD_ID))
 async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float, reason: str) -> None:
     """
     Vote for a user with a severity ranging from -1 to 1.
@@ -260,7 +368,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
             logger.error(f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long.")
 
 
-@bot.tree.command(name="credits", description="Check the number of credits you have.")
+@bot.tree.command(name="credits", description="Check the number of credits you have.", guild=discord.Object(id=GUILD_ID))
 async def slash_credits(interaction: discord.Interaction) -> None:
     """
     Check the number of credits a user has.
@@ -305,7 +413,7 @@ async def on_ready() -> None:
         return
     async with data_lock:
         logger.info("Bot is ready, starting to sync commands...")
-        await bot.tree.sync()
+        await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
         logger.info("Slash commands synced!")
         day_change.start()
         logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
@@ -363,13 +471,13 @@ async def set_justice_role(member: discord.Member, justice_ids: list[int]) -> No
     :return:
     """
     # If the Justice role does not exist, log the error and timestamp then return
-    justice_role: discord.Role | None = discord.utils.get(member.guild.roles, name="Justice")
+    justice_role: discord.Role | None = discord.utils.get(member.guild.roles, name=JUSTICE_ROLE_NAME)
     if justice_role is None:
         logger.error("The 'Justice' role does not exist in guild \"{member.guild.name}\".")
         return
-    if member.id in justice_ids and not any(role.name == "Justice" for role in member.roles):
+    if member.id in justice_ids and not any(role.name == JUSTICE_ROLE_NAME for role in member.roles):
         await member.add_roles(justice_role)
-    elif member.id not in justice_ids and any(role.name == "Justice" for role in member.roles):
+    elif member.id not in justice_ids and any(role.name == JUSTICE_ROLE_NAME for role in member.roles):
         await member.remove_roles(justice_role)
 
 
@@ -564,7 +672,7 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
     # Restart the script
     print("Restarting script...")
-    os.execv(sys.executable, ['python3.12'] + sys.argv)
+    os.execv(sys.executable, ['python3.12', __file__])
 
 
 # Register the global exception handler
