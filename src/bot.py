@@ -56,6 +56,7 @@ ERROR_SYMBOL = ":x:"
 SUCCESS_SYMBOL = ":white_check_mark:"
 ELARA_LOGGER_ID: int = 1274076825009655863
 LOGGER_CHANNEL_NAME: str = "logger"
+ROLE_TIMEOUT_REASON: str = "Missing required roles."
 
 # Load environment variables from .env file
 load_dotenv()
@@ -493,13 +494,28 @@ def justice_score(data: DataType, member: discord.Member) -> tuple[float, dateti
     return data[member.id]["deep_score"], member.joined_at
 
 
+async def delete_timeout_log(target_member_id: int, guild: discord.Guild) -> None:
+    """
+    Delete the timeout log message in the logger channel.
+    :param guild:
+    :param target_member_id:
+    :return:
+    """
+
+    logger_channel: discord.TextChannel | None = discord.utils.get(guild.text_channels, name=LOGGER_CHANNEL_NAME)
+    if logger_channel is not None:
+        async for message in logger_channel.history(limit=100):
+            if message.author.id == ELARA_LOGGER_ID and message.mentions[0].id == target_member_id and message.mentions[1].id == bot.user.id and ROLE_TIMEOUT_REASON in message.content:
+                await message.delete()
+
+
 @tasks.loop(time=DAY_CHANGE_TIME)
 async def day_change() -> None:
     """
     Loop that runs every day at midnight to update the data and assign roles.
     :return:
     """
-    async with data_lock:
+    async with (data_lock):
         data: DataType = await load_data()
         backup_file_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data_backup"))
         if not os.path.exists(backup_file_path):
@@ -546,17 +562,12 @@ async def day_change() -> None:
                     try:
                         was_timed_out: bool = member.timed_out_until is not None and member.timed_out_until > discord.utils.utcnow()
                         await member.timeout(MISSING_ROLE_TIMEOUT_DURATION, reason="Missing required roles.")
-                        # Delete Elara's message in #logger
-                        if was_timed_out:
-                            logger_channel: discord.TextChannel | None = discord.utils.get(guild.text_channels, name=LOGGER_CHANNEL_NAME)
-                            if logger_channel is not None:
-                                async for message in logger_channel.history(limit=3):
-                                    if message.author.id == ELARA_LOGGER_ID and message.content.startswith("Member Timeout: Updated") and message.mentions[0].id == member.id:
-                                        await message.delete()
                         if "suspended_timeout" not in data[member_id]:
                             data[member_id]["suspended_timeout"] = 0.0 if not was_timed_out else max(0.0, (member.timed_out_until - discord.utils.utcnow()).total_seconds())
                             await dm_member(member, MISSING_ROLE_MESSAGE(was_timed_out))
                             logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
+                        else:
+                            asyncio.get_event_loop().call_later(30, delete_timeout_log, member.id, guild)
                     except discord.errors.Forbidden:
                         logger.error(f"Forbidden to timeout user \"{member.display_name}\" (id={member_id}) for missing required roles.")
         # If less than 10% of members have any credits, give everyone exactly 0.1 credits
