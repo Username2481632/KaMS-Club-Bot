@@ -272,7 +272,7 @@ class RequestBanModal(discord.ui.Modal, title="Request Ban"):
             return
 
         reason = self.reason.value
-        # Implement your logic to handle ban requests here
+        # TODO: Implement your logic to handle ban requests here
         await interaction.response.edit_message(f"{SUCCESS_SYMBOL} Ban request submitted for user \"{user_object.display_name}\": {reason}.")
 
 
@@ -337,7 +337,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
             await set_respect_role(interaction.guild, target_member, data[target.id]["shallow_score"])
             if data[target.id]["shallow_score"] < (TIMEOUT_THRESHOLD + 1.0):
                 # Timeout procedure
-                timeout_minutes = calculate_timeout(data[target.id]["shallow_score"] + max(0.0, min(data[target.id]["deep_score"], 0.5)))
+                timeout_minutes = calculate_timeout(data[target.id]["shallow_score"] + max(-1.0, min(data[target.id]["deep_score"], 0.5)))
                 old_duration: datetime.timedelta = datetime.timedelta()
                 if target_member.timed_out_until is not None and (target_member.timed_out_until - discord.utils.utcnow()) > old_duration:
                     old_duration = target_member.timed_out_until - discord.utils.utcnow()
@@ -538,6 +538,9 @@ async def day_change() -> None:
                 data[member_id]["shallow_score"] = 0.0
             elif data[member_id]["shallow_score"] < 0:
                 data[member_id]["deep_score"] += data[member_id]["shallow_score"]
+                data[member_id]["shallow_score"] /= 4.0
+                if data[member_id]["shallow_score"] > -0.01:
+                    data[member_id]["shallow_score"] = 0.0
             elif data[member_id]["deep_score"] > 0.1:
                 data[member_id]["deep_score"] -= 0.0078125  # 1/28
 
