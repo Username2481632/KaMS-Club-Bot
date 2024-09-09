@@ -334,7 +334,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
 
         data[target.id]["shallow_score"] = float(Decimal(str(data[target.id]["shallow_score"])) + Decimal(str(severity)))
         if target_member is not None:
-            await set_respect_role(interaction.guild, target_member, data[target.id]["shallow_score"])
+            await set_respect_role(interaction.guild, target_member, data[target.id]["shallow_score"] + data[target.id]["deep_score"])
             if data[target.id]["shallow_score"] < (TIMEOUT_THRESHOLD + 1.0):
                 # Timeout procedure
                 timeout_minutes = calculate_timeout(data[target.id]["shallow_score"] + max(-1.0, min(data[target.id]["deep_score"], 0.5)))
@@ -462,7 +462,7 @@ async def on_member_join(member: discord.Member) -> None:
                             await set_justice_role(member, justice_ids)
                             break
 
-        await set_respect_role(member.guild, member, data[member.id]["shallow_score"])
+        await set_respect_role(member.guild, member, data[member.id]["shallow_score"] + data[member.id]["deep_score"])
     logger.info(f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time) " if not message_sent else ""}and their roles have been set.")
 
 
