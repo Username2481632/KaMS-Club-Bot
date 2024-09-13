@@ -234,6 +234,7 @@ class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode"):
             if length < 0:
                 raise ValueError("Slowmode must be a non-negative integer.")
         except ValueError:
+            # noinspection PyUnresolvedReferences
             await interaction.response.edit_message(content=f"{ERROR_SYMBOL} Invalid slowmode length. Slowmode must be a non-negative integer.")
             return
 
@@ -245,22 +246,30 @@ class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode"):
                 if reset_time <= 0:
                     raise ValueError("Reset time must be a positive number.")
             except ValueError:
+                # noinspection PyUnresolvedReferences
                 await interaction.response.edit_message(content=f"{ERROR_SYMBOL} Invalid reset time. Please enter a positive number.")
                 return
 
         if length < 0:
+            # noinspection PyUnresolvedReferences
             await interaction.response.edit_message(content=f"{ERROR_SYMBOL} Slowmode must be a non-negative integer.")
             return
         try:
             await interaction.channel.edit(slowmode_delay=length)
+            # noinspection PyUnresolvedReferences
             await interaction.response.edit_message(content=f"{SUCCESS_SYMBOL} Slowmode has been set to {length} second{"s" if length != 1 else ""} {f"with a reset time of {reset_time} seconds" if reset_time is not None else ''}.")
         except discord.errors.Forbidden:
+            # noinspection PyUnresolvedReferences
             await interaction.response.edit_message(f"{ERROR_SYMBOL} I do not have permission to set slowmode in this channel.")
 
 
-class RequestBanModal(discord.ui.Modal, title="Request Ban"):
-    user = discord.ui.TextInput(label="User ID to Ban", required=True, placeholder="012345678910111213")
-    reason = discord.ui.TextInput(label="Reason for Ban", style=discord.TextStyle.paragraph, required=True, min_length=20)
+BanRequestsType = dict[int, dict[int: bool]]  # user_id: {requester_id: ban_request}
+
+
+class RequestBanModal(discord.ui.Modal, title="Request Ban or Unban"):
+    user: discord.ui.TextInput = discord.ui.TextInput(label="User ID to Ban/Unban", required=True, placeholder="012345678910111213")
+    reason = discord.ui.TextInput(label="Reason for Ban/Unban", style=discord.TextStyle.paragraph, required=True, min_length=20)
+    ban_or_unban: discord.ui.Select = discord.ui.Select(placeholder="Ban or Unban", options=[discord.SelectOption(label="Ban", value="ban"), discord.SelectOption(label="Unban", value="unban")])
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -272,8 +281,31 @@ class RequestBanModal(discord.ui.Modal, title="Request Ban"):
             return
 
         reason = self.reason.value
-        # TODO: Implement your logic to handle ban requests here
-        await interaction.response.edit_message(f"{SUCCESS_SYMBOL} Ban request submitted for user \"{user_object.display_name}\": {reason}.")
+        ban_bool: bool = self.ban_or_unban.value == "ban"
+        # Open file ban_requests.json, create it if it doesn't exist
+        ban_requests: BanRequestsType = {}
+        if os.path.exists("ban_requests.json"):
+            with open("ban_requests.json") as file:
+                ban_requests = {int(key): value for key, value in json.load(file).items()}
+        if user_id not in ban_requests:
+            ban_requests[user_id] = {}
+        ban_requests[user_id][interaction.user.id] = ban_bool
+        with open("ban_requests.json", "w") as file:
+            json.dump(ban_requests, file, indent=2)
+        if ban_bool:
+            # If all current justices have requested a ban, ban the user
+            justice_ids: list[int] = await get_justice_ids(interaction.guild)
+            if all(justice_id in ban_requests[user_id] and ban_requests[user_id][justice_id] for justice_id in justice_ids):
+                # Ban the user
+                await interaction.guild.ban(user_object, reason="Requested by justices.")
+        else:
+            # If 2/3 of current justices have requested an unban, unban the user
+            justice_ids: list[int] = await get_justice_ids(interaction.guild)
+            if sum(1 for justice_id in justice_ids if justice_id in ban_requests[user_id] and not ban_requests[user_id][justice_id]) >= 2 * len(justice_ids) / 3:
+                # Unban the user
+                await interaction.guild.unban(user_object, reason="Requested by justices.")
+        # noinspection PyUnresolvedReferences
+        await interaction.response.edit_message(f"{SUCCESS_SYMBOL} {"Unb" if not ban_bool else 'B'}an request submitted for user \"{user_object.display_name}\": {reason}.")
 
 
 @bot.tree.command(name="justice_toolbox", description="Access the Justice Toolbox.", guild=discord.Object(id=GUILD_ID))
@@ -287,8 +319,10 @@ async def slash_justice_toolbox(interaction: discord.Interaction) -> None:
         logger.error("The 'Justice' role does not exist in the guild. Error accessing it for the Justice Toolbox.")
         return
     if justice_role not in interaction.user.roles:
+        # noinspection PyUnresolvedReferences
         await interaction.response.send_message("You must be a Justice to access the Justice Toolbox.", ephemeral=True)
         return
+    # noinspection PyUnresolvedReferences
     await interaction.response.send_message("Justice Toolbox", view=JusticeToolboxView(), ephemeral=True)
 
 
@@ -423,6 +457,24 @@ async def on_ready() -> None:
     is_initialized = True
 
 
+async def get_justice_ids(guild: discord.Guild) -> list[int]:
+    """
+    Get the justice ids from the justices channel.
+
+    :return:
+    """
+    # Fetch justice ids from the justices channel
+    justice_channel_category: discord.CategoryChannel | None = discord.utils.get(guild.categories, name=JUSTICE_CHANNEL_CATEGORY)
+    if justice_channel_category is not None:
+        justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
+        if justice_channel is not None:
+            async for message in justice_channel.history(limit=1):
+                if message.author == bot.user:
+                    # Extract the mentions from the message
+                    return [mention.id for mention in message.mentions]
+    return []
+
+
 @bot.event
 async def on_member_join(member: discord.Member) -> None:
     """
@@ -450,17 +502,7 @@ async def on_member_join(member: discord.Member) -> None:
             data[member.id] = default_user_entry
             save_data(data)
         else:
-            # Fetch justice ids from the justices channel
-            justice_channel_category: discord.CategoryChannel | None = discord.utils.get(member.guild.categories, name=JUSTICE_CHANNEL_CATEGORY)
-            if justice_channel_category is not None:
-                justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
-                if justice_channel is not None:
-                    async for message in justice_channel.history(limit=1):
-                        if message.author == bot.user:
-                            # Extract the mentions from the message
-                            justice_ids: list[int] = [mention.id for mention in message.mentions]
-                            await set_justice_role(member, justice_ids)
-                            break
+            await set_justice_role(member, await get_justice_ids(member.guild))
 
         await set_respect_role(member.guild, member, data[member.id]["shallow_score"] + data[member.id]["deep_score"])
     logger.info(f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time) " if not message_sent else ""}and their roles have been set.")
