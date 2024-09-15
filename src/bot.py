@@ -212,7 +212,7 @@ class JusticeToolboxView(discord.ui.View):
         modal = SetSlowmodeModal()
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(label="Request Ban", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Request Ban/Unban", style=discord.ButtonStyle.danger)
     async def request_ban(self, interaction: discord.Interaction, button: discord.ui.Button):
         """
 
@@ -308,7 +308,7 @@ class RequestBanModal(discord.ui.Modal, title="Request Ban or Unban"):
         await interaction.response.edit_message(f"{SUCCESS_SYMBOL} {"Unb" if not ban_bool else 'B'}an request submitted for user \"{user_object.display_name}\": {reason}.")
 
 
-@bot.tree.command(name="justice_toolbox", description="Access the Justice Toolbox.", guild=discord.Object(id=GUILD_ID))
+@bot.tree.command(name="justice_toolbox", description="Access the Justice Toolbox.")
 async def slash_justice_toolbox(interaction: discord.Interaction) -> None:
     """
     Access the Justice Toolbox.
@@ -326,7 +326,10 @@ async def slash_justice_toolbox(interaction: discord.Interaction) -> None:
     await interaction.response.send_message("Justice Toolbox", view=JusticeToolboxView(), ephemeral=True)
 
 
-@bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.", guild=discord.Object(id=GUILD_ID))
+
+
+@bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
+@commands.guild_only()
 async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float, reason: str) -> None:
     """
     Vote for a user with a severity ranging from -1 to 1.
@@ -336,11 +339,7 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
     :param severity:
     :return:
     """
-    # Make sure this isn't a dm
-    if interaction.guild is None or type(interaction.user) is discord.User:
-        # noinspection PyUnresolvedReferences
-        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        return
+
     if severity == 0.0:
         # noinspection PyUnresolvedReferences
         await interaction.response.send_message("You cannot vote with a severity of 0.", ephemeral=True)
@@ -402,10 +401,11 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
             # noinspection PyUnresolvedReferences
             await interaction.response.send_message(f"Vote successful! You have {data[interaction.user.id]['credits']} credits remaining.", ephemeral=True, delete_after=15)
         except discord.errors.NotFound:
-            logger.error(f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long.")
+            logger.error(f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long. Proceeding to send a DM.")
+            await dm_member(interaction.user, f"With apologies for the delay, your vote for {target.display_name} with severity {severity} has been successfully processed. You have {data[interaction.user.id]['credits']} credits remaining.")
 
 
-@bot.tree.command(name="credits", description="Check the number of credits you have.", guild=discord.Object(id=GUILD_ID))
+@bot.tree.command(name="credits", description="Check the number of credits you have.")
 async def slash_credits(interaction: discord.Interaction) -> None:
     """
     Check the number of credits a user has.
@@ -450,7 +450,7 @@ async def on_ready() -> None:
         return
     async with data_lock:
         logger.info("Bot is ready, starting to sync commands...")
-        await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
+        await bot.tree.sync(guild=bot.get_guild(GUILD_ID))
         logger.info("Slash commands synced!")
         day_change.start()
         logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
