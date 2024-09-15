@@ -190,10 +190,10 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
 
 
 @bot.event
-async def on_message(message: discord.Message) -> None:
+async def on_message(_message: discord.Message) -> None:
     """
 
-    :param message:
+    :param _message:
     """
     pass
 
@@ -203,24 +203,26 @@ class JusticeToolboxView(discord.ui.View):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="Set Slowmode", style=discord.ButtonStyle.primary)
-    async def set_slowmode(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def set_slowmode(self, interaction: discord.Interaction, _button: discord.ui.Button):
         """
 
         :param interaction:
-        :param button:
+        :param _button:
         """
         modal = SetSlowmodeModal()
+        # noinspection PyUnresolvedReferences
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(label="Request Ban/Unban", style=discord.ButtonStyle.danger)
-    async def request_ban(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def request_ban(self, interaction: discord.Interaction, _button: discord.ui.Button):
         """
 
         :param interaction:
-        :param button:
+        :param _button:
         """
-        modal = RequestBanModal()
-        await interaction.response.send_modal(modal)
+        select = BanUnbanView()
+        # noinspection PyUnresolvedReferences
+        await interaction.response.send_message("Select whether you would like request to ban or to unban a user.", view=select, ephemeral=True)
 
 
 class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode"):
@@ -263,50 +265,131 @@ class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode"):
             await interaction.response.edit_message(f"{ERROR_SYMBOL} I do not have permission to set slowmode in this channel.")
 
 
-BanRequestsType = dict[int, dict[int: bool]]  # user_id: {requester_id: ban_request}
+BanRequestsType = dict[int, dict[int: dict[str, bool | str]]]  # user_id: {requester_id: ban_request}
 
 
-class RequestBanModal(discord.ui.Modal, title="Request Ban or Unban"):
-    user: discord.ui.TextInput = discord.ui.TextInput(label="User ID to Ban/Unban", required=True, placeholder="012345678910111213")
-    reason = discord.ui.TextInput(label="Reason for Ban/Unban", style=discord.TextStyle.paragraph, required=True, min_length=20)
-    ban_or_unban: discord.ui.Select = discord.ui.Select(placeholder="Ban or Unban", options=[discord.SelectOption(label="Ban", value="ban"), discord.SelectOption(label="Unban", value="unban")])
+class RequestBanModal(discord.ui.Modal):
+
+    def __init__(self, ban_bool: bool, **kwargs):
+        title = "Request Ban" if ban_bool else "Request Unban"
+        super().__init__(title=title, **kwargs)
+        self.ban_bool = ban_bool
+        self.target: discord.ui.TextInput = discord.ui.TextInput(label=f"User ID to {"Ban" if self.ban_bool else "Unban"}", required=True, placeholder="012345678910111213", style=discord.TextStyle.short)
+        self.reason = discord.ui.TextInput(label=f"Reason for {"Ban" if self.ban_bool else "Unban"}", style=discord.TextStyle.paragraph, required=True, min_length=40)
+
+        # Add the text inputs to the modal
+        self.add_item(self.target)
+        self.add_item(self.reason)
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            user_id = int(self.user.value)
-            user_object: discord.User = await bot.fetch_user(user_id)
-        except (ValueError, discord.errors.NotFound):
+            target_object: discord.User = await bot.fetch_user(int(self.target.value))
+        except (ValueError, discord.errors.NotFound, discord.errors.HTTPException):
             # noinspection PyUnresolvedReferences
             await interaction.response.edit_message(content=f"{ERROR_SYMBOL} Invalid user ID. Please enter a valid user ID.")
             return
 
         reason = self.reason.value
-        ban_bool: bool = self.ban_or_unban.value == "ban"
         # Open file ban_requests.json, create it if it doesn't exist
-        ban_requests: BanRequestsType = {}
-        if os.path.exists("ban_requests.json"):
-            with open("ban_requests.json") as file:
-                ban_requests = {int(key): value for key, value in json.load(file).items()}
-        if user_id not in ban_requests:
-            ban_requests[user_id] = {}
-        ban_requests[user_id][interaction.user.id] = ban_bool
-        with open("ban_requests.json", "w") as file:
-            json.dump(ban_requests, file, indent=2)
-        if ban_bool:
+        ban_requests: BanRequestsType = read_ban_requests()
+        if target_object.id not in ban_requests:
+            ban_requests[target_object.id] = {}
+        ban_requests[target_object.id][interaction.user.id] = {"request": self.ban_bool, "reason": reason}
+        save_ban_requests(ban_requests)
+        if self.ban_bool:
             # If all current justices have requested a ban, ban the user
             justice_ids: list[int] = await get_justice_ids(interaction.guild)
-            if all(justice_id in ban_requests[user_id] and ban_requests[user_id][justice_id] for justice_id in justice_ids):
+            if len(justice_ids) == JUSTICE_COUNT and all(justice_id in ban_requests[target_object.id] and ban_requests[target_object.id][justice_id] for justice_id in justice_ids):
                 # Ban the user
-                await interaction.guild.ban(user_object, reason="Requested by justices.")
+                try:
+                    await interaction.guild.ban(target_object, reason="Requested by justices.")
+                except discord.errors.Forbidden:
+                    # noinspection PyUnresolvedReferences
+                    await interaction.response.edit_message(f"{ERROR_SYMBOL} Sorry, I am unable to ban this user.")
         else:
             # If 2/3 of current justices have requested an unban, unban the user
             justice_ids: list[int] = await get_justice_ids(interaction.guild)
-            if sum(1 for justice_id in justice_ids if justice_id in ban_requests[user_id] and not ban_requests[user_id][justice_id]) >= 2 * len(justice_ids) / 3:
+            if sum(1 for justice_id in justice_ids if justice_id in ban_requests[target_object.id] and not ban_requests[target_object.id][justice_id]) >= 2 * len(justice_ids) / 3 and any(
+                    ban.user.id == target_object.id async for ban in interaction.guild.bans()):
                 # Unban the user
-                await interaction.guild.unban(user_object, reason="Requested by justices.")
+                await interaction.guild.unban(target_object, reason="Requested by justices.")
         # noinspection PyUnresolvedReferences
-        await interaction.response.edit_message(f"{SUCCESS_SYMBOL} {"Unb" if not ban_bool else 'B'}an request submitted for user \"{user_object.display_name}\": {reason}.")
+        await interaction.response.edit_message(content=f"{SUCCESS_SYMBOL} {"Unb" if not self.ban_bool else 'B'}an request submitted for user \"{target_object.display_name}\".")
 
+
+class BanUnbanSelect(discord.ui.Select):
+    def __init__(self):
+        # To make it a multi-select dropdown, add the parameter max_values=2
+        options = [discord.SelectOption(label="Ban", value="ban"), discord.SelectOption(label="Unban", value="unban"), discord.SelectOption(label="Cancel Prior Request", value="cancel")]
+        super().__init__(placeholder="Select an action", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        # Save the user's choice in the interaction or context
+        choice = self.values[0]
+        if choice == "cancel":
+            ban_requests: BanRequestsType = read_ban_requests()
+            user_requests: list[tuple[int, str, bool]] = [(target_id, (await bot.fetch_user(interaction.user.id)).display_name, ban_requests[target_id][interaction.user.id]["request"]) for target_id in ban_requests if
+                                                          interaction.user.id in ban_requests[target_id]]
+            if not user_requests:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.send_message(f"{ERROR_SYMBOL} You have no ban requests to cancel.", ephemeral=True)
+            else:
+                select = BanRequestCancelSelect(requests=user_requests)
+                view: discord.ui.View = discord.ui.View()
+                view.add_item(select)
+                # noinspection PyUnresolvedReferences
+                await interaction.response.send_message("Select a ban request to cancel.", view=view, ephemeral=True)
+            return
+        # Pass the choice to the modal
+        modal = RequestBanModal(ban_bool=choice == "ban")
+        # noinspection PyUnresolvedReferences
+        await interaction.response.send_modal(modal)
+
+
+class BanRequestCancelSelect(discord.ui.Select):
+    def __init__(self, requests: list[tuple[int, str, bool]]):
+        # Ban/Unban [User id] ("display name")
+        options = [discord.SelectOption(label=f'{"Ban" if request[2] else "Unban"} {request[0]} ("{request[1]}")', value=str(request[0])) for request in requests]
+        super().__init__(placeholder="Select a ban request to cancel", options=options)
+        self.requests = requests
+
+    async def callback(self, interaction: discord.Interaction):
+        # Delete the ban request from the file
+        target_id = int(self.values[0])
+        ban_requests: BanRequestsType = read_ban_requests()
+        for requester_id in ban_requests[target_id]:
+            if requester_id == interaction.user.id:
+                ban_requests[target_id].pop(requester_id)
+                save_ban_requests(ban_requests)
+                # noinspection PyUnresolvedReferences
+                # Find the user id in the self.requests list and get the display name
+                await interaction.response.send_message(f"{SUCCESS_SYMBOL} Ban request for user {target_id} (\"{next(request[1] for request in self.requests if request[0] == target_id)}\") has been cancelled.", ephemeral=True)
+                break
+
+
+class BanUnbanView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+        self.add_item(BanUnbanSelect())
+
+
+def read_ban_requests() -> BanRequestsType:
+    """
+    Read the ban requests from the JSON file.
+    :return:
+    """
+    if os.path.exists("ban_requests.json"):
+        with open("ban_requests.json") as file:
+            return {int(key): {int(subkey): value for subkey, value in subdict.items()} for key, subdict in json.load(file).items()}
+    return {}
+
+def save_ban_requests(ban_requests: BanRequestsType) -> None:
+    """
+    Save the ban requests to the JSON file.
+    :param ban_requests:
+    """
+    with open("ban_requests.json", "w") as file:
+        json.dump({str(key): {str(subkey): value for subkey, value in subdict.items()} for key, subdict in ban_requests.items()}, file, indent=2)
 
 @bot.tree.command(name="justice_toolbox", description="Access the Justice Toolbox.")
 async def slash_justice_toolbox(interaction: discord.Interaction) -> None:
@@ -324,8 +407,6 @@ async def slash_justice_toolbox(interaction: discord.Interaction) -> None:
         return
     # noinspection PyUnresolvedReferences
     await interaction.response.send_message("Justice Toolbox", view=JusticeToolboxView(), ephemeral=True)
-
-
 
 
 @bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
