@@ -630,6 +630,7 @@ async def delete_timeout_log(target_member_id: int, guild: discord.Guild) -> Non
         async for message in logger_channel.history(limit=100):
             if message.author.id == ELARA_LOGGER_ID and message.mentions[0].id == target_member_id and message.mentions[1].id == bot.user.id and ROLE_TIMEOUT_REASON in message.content:
                 await message.delete()
+                return
 
 
 @tasks.loop(time=DAY_CHANGE_TIME)
