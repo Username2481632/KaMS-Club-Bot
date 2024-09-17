@@ -638,6 +638,7 @@ async def day_change() -> None:
     Loop that runs every day at midnight to update the data and assign roles.
     :return:
     """
+    logger.info("Day change has started.")
     async with (data_lock):
         data: DataType = await load_data()
         backup_file_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data_backup"))
