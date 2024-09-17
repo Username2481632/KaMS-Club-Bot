@@ -781,7 +781,9 @@ async def shutdown() -> None:
     """
     Gracefully shuts down the bot.
     """
+    logger.info("Waiting to acquire data_lock...")
     await data_lock.acquire()
+    logger.info("Data lock acquired; closing bot...")
     await bot.close()  # Gracefully close the Discord bot connection
     logger.info('Shutdown Complete'.center(shutil.get_terminal_size().columns, '='))
 
