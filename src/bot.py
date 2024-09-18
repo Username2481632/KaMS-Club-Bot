@@ -646,7 +646,7 @@ async def day_change() -> None:
     :return:
     """
     logger.debug("Day change has started.")
-    async with (data_lock):
+    async with data_lock:
         data: DataType = await load_data()
         backup_file_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data_backup"))
         if not os.path.exists(backup_file_path):
