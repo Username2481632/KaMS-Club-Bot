@@ -50,7 +50,7 @@ ROLE_RESTORATION_MESSAGE = "You have been untimed out due to acquiring the neces
 LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 MISSING_ROLE_TIMEOUT_DURATION: datetime.timedelta = datetime.timedelta(days=2)
 JUSTICE_DEEP_SCORE_REQUIREMENT: float = 1.5
-DAY_CHANGE_TIME: datetime.time = datetime.time(hour=0, minute=0, second=0)
+DAY_CHANGE_TIME: datetime.time = datetime.time(hour=2, minute=7, second=0)
 JUSTICE_ROLE_NAME = "Justice"
 ERROR_SYMBOL = ":x:"
 SUCCESS_SYMBOL = ":white_check_mark:"
@@ -531,7 +531,7 @@ async def on_ready() -> None:
         return
     async with data_lock:
         logger.info("Bot is ready, starting to sync commands...")
-        await bot.tree.sync(guild=bot.get_guild(GUILD_ID))
+        # await bot.tree.sync(guild=bot.get_guild(GUILD_ID))
         logger.info("Slash commands synced!")
         day_change.start()
         logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
@@ -557,9 +557,10 @@ async def get_justice_ids(guild: discord.Guild) -> list[int]:
 
 
 @bot.event
-async def on_member_join(member: discord.Member) -> None:
+async def on_member_join(member: discord.Member, data: DataType = None) -> None:
     """
     Event that runs when a member joins the server, welcoming them and setting their roles.
+    :param data:
     :param member:
     :return:
     """
@@ -567,25 +568,30 @@ async def on_member_join(member: discord.Member) -> None:
     if member.bot:
         return
     message_sent: bool = False
-    async with data_lock:
-        data: DataType = await load_data()
-        if not member.id in data:
-            # DM the member
-            sending_message: str = ""
-            # If the member joined over 5 minutes ago
-            if (discord.utils.utcnow() - member.joined_at).total_seconds() > 300:
-                sending_message += "With apologies for the delay,\n"
-            sending_message += ("Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. "
-                                "Thanks!")
-            await dm_member(member, sending_message)
-            message_sent = True
+    locked: bool = False
+    if data is None:
+        data = await load_data()
+        await data_lock.acquire()
+        locked = True
+    if not member.id in data:
+        # DM the member
+        sending_message: str = ""
+        # If the member joined over 5 minutes ago
+        if (discord.utils.utcnow() - member.joined_at).total_seconds() > 300:
+            sending_message += "With apologies for the delay,\n"
+        sending_message += ("Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. "
+                            "Thanks!")
+        await dm_member(member, sending_message)
+        message_sent = True
 
-            data[member.id] = default_user_entry
-            save_data(data)
-        else:
-            await set_justice_role(member, await get_justice_ids(member.guild))
+        data[member.id] = default_user_entry
+        save_data(data)
+    else:
+        await set_justice_role(member, await get_justice_ids(member.guild))
 
-        await set_respect_role(member.guild, member, data[member.id]["shallow_score"] + data[member.id]["deep_score"])
+    await set_respect_role(member.guild, member, data[member.id]["shallow_score"] + data[member.id]["deep_score"])
+    if locked:
+        data_lock.release()
     logger.info(f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time) " if not message_sent else ""}and their roles have been set.")
 
 
@@ -639,7 +645,7 @@ async def day_change() -> None:
     Loop that runs every day at midnight to update the data and assign roles.
     :return:
     """
-    logger.info("Day change has started.")
+    logger.debug("Day change has started.")
     async with (data_lock):
         data: DataType = await load_data()
         backup_file_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data_backup"))
@@ -655,8 +661,8 @@ async def day_change() -> None:
         for member in guild.members:
             if not member.bot:
                 member_count += 1
-            if member.id not in data:
-                await on_member_join(member)
+                if member.id not in data:
+                    await on_member_join(member, data)
         for member_id in data:
             if data[member_id]["shallow_score"] > 0:
                 data[member_id]["deep_score"] += math.sqrt(data[member_id]["shallow_score"]) / (member_count ** (1 / 3))
@@ -695,7 +701,7 @@ async def day_change() -> None:
                             await dm_member(member, MISSING_ROLE_MESSAGE(was_timed_out))
                             logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
                         else:
-                            asyncio.get_event_loop().call_later(30, delete_timeout_log, member.id, guild)
+                            bot.loop.call_later(30, delete_timeout_log, member.id, guild)
                     except discord.errors.Forbidden:
                         logger.error(f"Forbidden to timeout user \"{member.display_name}\" (id={member_id}) for missing required roles.")
         # If less than 10% of members have any credits, give everyone exactly 0.1 credits
@@ -782,9 +788,9 @@ async def shutdown() -> None:
     """
     Gracefully shuts down the bot.
     """
-    logger.info("Waiting to acquire data_lock...")
+    logger.debug("Waiting to acquire data_lock...")
     await data_lock.acquire()
-    logger.info("Data lock acquired; closing bot...")
+    logger.debug("Data lock acquired; closing bot...")
     await bot.close()  # Gracefully close the Discord bot connection
     logger.info('Shutdown Complete'.center(shutil.get_terminal_size().columns, '='))
 
