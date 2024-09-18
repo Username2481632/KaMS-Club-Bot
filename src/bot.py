@@ -50,7 +50,7 @@ ROLE_RESTORATION_MESSAGE = "You have been untimed out due to acquiring the neces
 LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 MISSING_ROLE_TIMEOUT_DURATION: datetime.timedelta = datetime.timedelta(days=2)
 JUSTICE_DEEP_SCORE_REQUIREMENT: float = 1.5
-DAY_CHANGE_TIME: datetime.time = datetime.time(hour=2, minute=7, second=0)
+DAY_CHANGE_TIME: datetime.time = datetime.time(hour=0, minute=0, second=0)
 JUSTICE_ROLE_NAME = "Justice"
 ERROR_SYMBOL = ":x:"
 SUCCESS_SYMBOL = ":white_check_mark:"
@@ -383,6 +383,7 @@ def read_ban_requests() -> BanRequestsType:
             return {int(key): {int(subkey): value for subkey, value in subdict.items()} for key, subdict in json.load(file).items()}
     return {}
 
+
 def save_ban_requests(ban_requests: BanRequestsType) -> None:
     """
     Save the ban requests to the JSON file.
@@ -390,6 +391,7 @@ def save_ban_requests(ban_requests: BanRequestsType) -> None:
     """
     with open("ban_requests.json", "w") as file:
         json.dump({str(key): {str(subkey): value for subkey, value in subdict.items()} for key, subdict in ban_requests.items()}, file, indent=2)
+
 
 @bot.tree.command(name="justice_toolbox", description="Access the Justice Toolbox.")
 async def slash_justice_toolbox(interaction: discord.Interaction) -> None:
@@ -531,7 +533,7 @@ async def on_ready() -> None:
         return
     async with data_lock:
         logger.info("Bot is ready, starting to sync commands...")
-        # await bot.tree.sync(guild=bot.get_guild(GUILD_ID))
+        await bot.tree.sync(guild=bot.get_guild(GUILD_ID))
         logger.info("Slash commands synced!")
         day_change.start()
         logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
