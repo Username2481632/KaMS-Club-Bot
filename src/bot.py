@@ -737,16 +737,22 @@ async def day_change() -> None:
     await justice_channel.send(message_content, allowed_mentions=discord.AllowedMentions.none())
 
     # Cleanup polls channel
-    deleted_count: int = 0
-    for channel in guild.text_channels:
-        if channel.name == "polls":
-            # after one week ago
-            async for message in channel.history(after=discord.utils.utcnow() - datetime.timedelta(days=7)):
-                if message.poll is None and not message.pinned and not message.content.startswith("[POLL]"):
-                    await message.delete()
-                    deleted_count += 1
-    if deleted_count > 0:
-        logger.info(f"Deleted {deleted_count} non-poll messages in the polls channel.")
+    # deleted_count: int = 0
+    # for channel in guild.text_channels:
+    #     if channel.name == "polls":
+    #         # after one week ago
+    #         async for message in channel.history(after=discord.utils.utcnow() - datetime.timedelta(days=7)):
+    #             if message.poll is None and not message.pinned and not message.content.startswith("[POLL]"):
+    #                 await message.delete()
+    #                 deleted_count += 1
+    # Use the channel.purge method instead of the above code
+    polls_channel: discord.TextChannel | None = discord.utils.get(guild.text_channels, name="polls")
+    if polls_channel is not None:
+        deleted_count: int = len(
+            await polls_channel.purge(after=datetime.datetime(year=2024, month=7, day=14), check=lambda msg: msg.poll is None and not msg.pinned and not msg.content.startswith("[POLL]"), bulk=True, limit=None, oldest_first=True,
+                                      reason="Clean up non-poll messages."))
+        if deleted_count > 0:
+            logger.info(f"Deleted {deleted_count} non-poll messages in the polls channel.")
     logger.info("Full day change complete.")
 
 
