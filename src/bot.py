@@ -634,9 +634,9 @@ def is_timeout_prolongation_log(message: discord.Message, target_member_ids: lis
     """
     if message.author.id == ELARA_LOGGER_ID:
         for embed in message.embeds:
-            if embed.title == "Member Timeout: Updated" and any(str(memb_id) in embed.fields[0].value for memb_id in target_member_ids) and str(bot.user.id) in embed.fields[1].value and embed.fields[3].value == ROLE_TIMEOUT_REASON:
-                return True
-    return False
+            if embed.title != "Member Timeout: Updated" or not any(str(memb_id) in embed.fields[0].value for memb_id in target_member_ids) or str(bot.user.id) not in embed.fields[1].value or embed.fields[3].value != ROLE_TIMEOUT_REASON:
+                return False
+    return True
 
 
 @tasks.loop(time=DAY_CHANGE_TIME)
