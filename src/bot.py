@@ -175,18 +175,21 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
         logger.error(f"The '{DISRESPECTFUL_ROLE_NAME}' or '{RESPECTFUL_ROLE_NAME}' role does not exist.")
         return
 
-    if score > 0:
+    if score >= 0:
         if disrespectful_role in member.roles:
             await member.remove_roles(disrespectful_role, reason=f"Respect score of {score} is positive.")
         if respectful_role not in member.roles:
             await member.add_roles(respectful_role, reason=f"Respect score of {score} is positive.")
             logger.info(f"{member.display_name} has been upgraded to '{RESPECTFUL_ROLE_NAME}'.")
+    elif disrespectful_role not in member.roles and respectful_role not in member.roles:
+        await member.add_roles(disrespectful_role, reason=f"Bad respect score.")
+        logger.info(f"{member.display_name} has been assigned '{DISRESPECTFUL_ROLE_NAME}' because their roles were missing and their respect score is negative.")
     elif score < min(-1.0, -0.01 * sum(not memb.bot for memb in guild.members)):
         if respectful_role in member.roles:
             await member.remove_roles(respectful_role, reason=f"Respect score of {score} is unacceptably bad.")
-        if disrespectful_role not in member.roles:
-            await member.add_roles(disrespectful_role)
-            logger.info(f"{member.display_name} has been downgraded to '{DISRESPECTFUL_ROLE_NAME}'.")
+            if disrespectful_role not in member.roles:
+                await member.add_roles(disrespectful_role)
+                logger.info(f"{member.display_name} has been downgraded to '{DISRESPECTFUL_ROLE_NAME}'.")
 
 
 @bot.event
