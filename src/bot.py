@@ -625,20 +625,18 @@ def justice_score(data: DataType, member: discord.Member) -> tuple[float, dateti
     return data[member.id]["deep_score"], member.joined_at
 
 
-async def delete_timeout_log(target_member_id: int, guild: discord.Guild) -> None:
+def is_timeout_prolongation_log(message: discord.Message, target_member_ids: list[int]) -> bool:  # THIS WILL NEED UPDATING IF THERE IS A CHANGE IN THE LOGGING FORMAT
     """
-    Delete the timeout log message in the logger channel.
-    :param guild:
-    :param target_member_id:
+    Check if the message is a timeout prolongation log.
+    :param message:
+    :param target_member_ids:
     :return:
     """
-
-    logger_channel: discord.TextChannel | None = discord.utils.get(guild.text_channels, name=LOGGER_CHANNEL_NAME)
-    if logger_channel is not None:
-        async for message in logger_channel.history(limit=100):
-            if message.author.id == ELARA_LOGGER_ID and message.mentions[0].id == target_member_id and message.mentions[1].id == bot.user.id and ROLE_TIMEOUT_REASON in message.content:
-                await message.delete()
-                return
+    if message.author.id == ELARA_LOGGER_ID:
+        for embed in message.embeds:
+            if embed.title == "Member Timeout: Updated" and any(str(memb_id) in embed.fields[0].value for memb_id in target_member_ids) and str(bot.user.id) in embed.fields[1].value and embed.fields[3].value == ROLE_TIMEOUT_REASON:
+                return True
+    return False
 
 
 @tasks.loop(time=DAY_CHANGE_TIME)
@@ -684,6 +682,7 @@ async def day_change() -> None:
             if data[justices[-1].id]["deep_score"] <= JUSTICE_DEEP_SCORE_REQUIREMENT:
                 justices = []
 
+        log_deletions: list[int] = []
         for member_id in data:
             member = guild.get_member(member_id)
 
@@ -703,7 +702,7 @@ async def day_change() -> None:
                             await dm_member(member, MISSING_ROLE_MESSAGE(was_timed_out))
                             logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
                         else:
-                            bot.loop.call_later(30, delete_timeout_log, member.id, guild)
+                            log_deletions.append(member_id)
                     except discord.errors.Forbidden:
                         logger.error(f"Forbidden to timeout user \"{member.display_name}\" (id={member_id}) for missing required roles.")
         # If less than 10% of members have any credits, give everyone exactly 0.1 credits
@@ -736,16 +735,6 @@ async def day_change() -> None:
             await message.delete()
     await justice_channel.send(message_content, allowed_mentions=discord.AllowedMentions.none())
 
-    # Cleanup polls channel
-    # deleted_count: int = 0
-    # for channel in guild.text_channels:
-    #     if channel.name == "polls":
-    #         # after one week ago
-    #         async for message in channel.history(after=discord.utils.utcnow() - datetime.timedelta(days=7)):
-    #             if message.poll is None and not message.pinned and not message.content.startswith("[POLL]"):
-    #                 await message.delete()
-    #                 deleted_count += 1
-    # Use the channel.purge method instead of the above code
     polls_channel: discord.TextChannel | None = discord.utils.get(guild.text_channels, name="polls")
     if polls_channel is not None:
         deleted_count: int = len(
@@ -754,6 +743,14 @@ async def day_change() -> None:
         if deleted_count > 0:
             logger.info(f"Deleted {deleted_count} non-poll messages in the polls channel.")
     logger.info("Full day change complete.")
+    time.sleep(30)
+
+    # Purge the log_deletions from the logger channel
+    logger_channel: discord.TextChannel | None = discord.utils.get(guild.text_channels, name=LOGGER_CHANNEL_NAME)
+    if logger_channel is not None:
+        # Use the day_change_time of today as the after parameter
+        deleted = await logger_channel.purge(after=datetime.datetime.combine(datetime.date.today(), DAY_CHANGE_TIME), check=lambda msg: is_timeout_prolongation_log(msg, log_deletions), bulk=True, limit=None, reason="Clean up timeout logs.")
+        logger.info(f"Deleted {len(deleted)} role timeout prolongation logs from the logger channel.")
 
 
 # When a user updates their roles, check if they have the required roles
