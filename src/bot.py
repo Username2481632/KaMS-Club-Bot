@@ -745,7 +745,7 @@ async def day_change() -> None:
                                       reason="Clean up non-poll messages."))
         if deleted_count > 0:
             logger.info(f"Deleted {deleted_count} non-poll messages in the polls channel.")
-    time.sleep(30)
+    await asyncio.sleep(30)
 
     # Purge the log_deletions from the logger channel
     logger_channel: discord.TextChannel | None = discord.utils.get(guild.text_channels, name=LOGGER_CHANNEL_NAME)
