@@ -175,7 +175,7 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
         logger.error(f"The '{DISRESPECTFUL_ROLE_NAME}' or '{RESPECTFUL_ROLE_NAME}' role does not exist.")
         return
 
-    if score >= 0:
+    if score >= 0.0:
         if disrespectful_role in member.roles:
             await member.remove_roles(disrespectful_role, reason=f"Respect score of {score} is positive.")
         if respectful_role not in member.roles:
