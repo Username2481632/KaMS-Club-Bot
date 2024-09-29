@@ -745,7 +745,6 @@ async def day_change() -> None:
                                       reason="Clean up non-poll messages."))
         if deleted_count > 0:
             logger.info(f"Deleted {deleted_count} non-poll messages in the polls channel.")
-    logger.info("Full day change complete.")
     time.sleep(30)
 
     # Purge the log_deletions from the logger channel
@@ -754,6 +753,7 @@ async def day_change() -> None:
         # Use the day_change_time of today as the after parameter
         deleted = await logger_channel.purge(after=datetime.datetime.combine(datetime.date.today(), DAY_CHANGE_TIME), check=lambda msg: is_timeout_prolongation_log(msg, log_deletions), bulk=True, limit=None, reason="Clean up timeout logs.")
         logger.info(f"Deleted {len(deleted)} role timeout prolongation logs from the logger channel.")
+    logger.info("Full day change complete.")
 
 
 # When a user updates their roles, check if they have the required roles
