@@ -208,7 +208,6 @@ class JusticeToolboxView(discord.ui.View):
     @discord.ui.button(label="Set Slowmode", style=discord.ButtonStyle.primary)
     async def set_slowmode(self, interaction: discord.Interaction, _button: discord.ui.Button):
         """
-
         :param interaction:
         :param _button:
         """
@@ -228,9 +227,9 @@ class JusticeToolboxView(discord.ui.View):
         await interaction.response.send_message("Select whether you would like request to ban or to unban a user.", view=select, ephemeral=True)
 
 
-class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode"):
-    length = discord.ui.TextInput(label="Length (seconds)", required=True)
-    reset_time = discord.ui.TextInput(label="Reset Time (optional)", required=False)
+class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode for the Current Channel"):
+    length = discord.ui.TextInput(label="Length, seconds", required=True)
+    reset_time = discord.ui.TextInput(label="Reset Time, minutes (optional)", required=False)
 
     async def on_submit(self, interaction: discord.Interaction):
         # Validate input for length
@@ -244,10 +243,10 @@ class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode"):
             return
 
         # Optional reset time validation
-        reset_time: int | None = None
+        reset_time: float | None = None
         if self.reset_time.value:
             try:
-                reset_time = int(self.reset_time.value)
+                reset_time = float(self.reset_time.value)
                 if reset_time <= 0:
                     raise ValueError("Reset time must be a positive number.")
             except ValueError:
@@ -262,7 +261,7 @@ class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode"):
         try:
             await interaction.channel.edit(slowmode_delay=length)
             # noinspection PyUnresolvedReferences
-            await interaction.response.edit_message(content=f"{SUCCESS_SYMBOL} Slowmode has been set to {length} second{"s" if length != 1 else ""} {f"with a reset time of {reset_time} seconds" if reset_time is not None else ''}.")
+            await interaction.response.edit_message(content=f"{SUCCESS_SYMBOL} Slowmode for {interaction.channel.mention} has been set to {length} minute{"s" if length != 1 else ""} {f"with a reset time of {reset_time} seconds" if reset_time is not None else ''}.")
         except discord.errors.Forbidden:
             # noinspection PyUnresolvedReferences
             await interaction.response.edit_message(f"{ERROR_SYMBOL} I do not have permission to set slowmode in this channel.")
