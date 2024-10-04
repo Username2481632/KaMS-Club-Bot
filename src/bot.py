@@ -730,13 +730,22 @@ async def day_change() -> None:
         justice_channel_category = await guild.create_category(JUSTICE_CHANNEL_CATEGORY)
         assert justice_channel_category is not None
     justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
+    found: bool = False
+    previous_justice_ids: set[int] = set()
     if justice_channel is None:
         justice_channel = await justice_channel_category.create_text_channel(JUSTICE_CHANNEL_NAME, overwrites={guild.default_role: discord.PermissionOverwrite(send_messages=False, create_public_threads=False, create_private_threads=False),
                                                                                                                discord.utils.get(guild.roles, name="KaMS Club"): discord.PermissionOverwrite(send_messages=True)})
     else:
         async for message in justice_channel.history():
-            await message.delete()
-    await justice_channel.send(message_content, allowed_mentions=discord.AllowedMentions.none())
+            if message.author == bot.user:
+                previous_justice_ids = {int(mention.id) for mention in message.mentions}
+            if not found and message.content != message_content:
+                await message.delete()
+            else:
+                found = True
+    if not found:
+        # Only mention the justices that aren't in previous_justice_ids
+        await justice_channel.send(message_content, allowed_mentions=discord.AllowedMentions(users=[discord.Object(id=justice_id) for justice_id in set(justice.id for justice in justices) - previous_justice_ids]))
 
     polls_channel: discord.TextChannel | None = discord.utils.get(guild.text_channels, name="polls")
     if polls_channel is not None:
