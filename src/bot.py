@@ -268,7 +268,7 @@ class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode for the Current Cha
             await interaction.response.edit_message(f"{ERROR_SYMBOL} I do not have permission to set slowmode in this channel.")
 
 
-BanRequestsType = dict[int, dict[int: dict[str, bool | str]]]  # user_id: {requester_id: ban_request}
+BanRequestsType = dict[int, dict[int, dict[str, bool | str]]]  # user_id: {requester_id: ban_request}
 
 
 class RequestBanModal(discord.ui.Modal):
@@ -331,8 +331,11 @@ class BanUnbanSelect(discord.ui.Select):
         choice = self.values[0]
         if choice == "cancel":
             ban_requests: BanRequestsType = read_ban_requests()
-            user_requests: list[tuple[int, str, bool]] = [(target_id, (await bot.fetch_user(interaction.user.id)).display_name, ban_requests[target_id][interaction.user.id]["request"]) for target_id in ban_requests if
-                                                          interaction.user.id in ban_requests[target_id]]
+            user_requests: list[tuple[int, str, bool]] = []
+            for target_id in ban_requests:
+                if interaction.user.id in ban_requests[target_id]:
+                    target_object: discord.User = await bot.fetch_user(target_id)
+                    user_requests.append((target_id, target_object.display_name, ban_requests[target_id][interaction.user.id]["request"]))
             if not user_requests:
                 # noinspection PyUnresolvedReferences
                 await interaction.response.send_message(f"{ERROR_SYMBOL} You have no ban requests to cancel.", ephemeral=True)
@@ -562,7 +565,7 @@ async def get_justice_ids(guild: discord.Guild) -> list[int]:
 
 
 @bot.event
-async def on_member_join(member: discord.Member, data: DataType = None) -> None:
+async def on_member_join(member: discord.Member, data: DataType | None = None) -> None:
     """
     Event that runs when a member joins the server, welcoming them and setting their roles.
     :param data:
