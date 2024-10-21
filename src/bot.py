@@ -58,6 +58,9 @@ ELARA_LOGGER_ID: int = 1274076825009655863
 LOGGER_CHANNEL_NAME: str = "logger"
 ROLE_TIMEOUT_REASON: str = "Missing required roles."
 
+# Record start time
+start_time: float = time.time()
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -417,9 +420,15 @@ async def slash_justice_toolbox(interaction: discord.Interaction) -> None:
     await interaction.response.send_message("Justice Toolbox", view=JusticeToolboxView(), ephemeral=True)
 
 
+async def my_opinion() -> None:
+    """
+    Output a table of percentages, adding to <= 1
+    """
+
+
 @bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
 @commands.guild_only()
-async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float, reason: str) -> None:
+async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float, reason: str, hidden: bool) -> None:
     """
     Vote for a user with a severity ranging from -1 to 1.
     :param reason:
@@ -651,7 +660,7 @@ async def day_change() -> None:
     Loop that runs every day at midnight to update the data and assign roles.
     :return:
     """
-    logger.debug("Day change has started.")
+    logger.info("Day change has started.")
     async with data_lock:
         data: DataType = await load_data()
         backup_file_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data_backup"))
@@ -843,8 +852,12 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     print("Unhandled exception occurred:")
     traceback.print_exception(exc_type, exc_value, exc_traceback)
 
+    # If the script has been running for less than 1 hour, exit
+    if time.time() - start_time < 1000:
+        exit(1)
+
     # Optional: delay before restarting
-    time.sleep(2)
+    time.sleep(60)
 
     # Restart the script
     print("Restarting script...")
