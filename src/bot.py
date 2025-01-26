@@ -44,10 +44,16 @@ JUSTICE_CHANNEL_CATEGORY: str = "Information"
 RESPECTFUL_ROLE_NAME: str = "Respectful :)"
 DISRESPECTFUL_ROLE_NAME: str = "Disrespectful :("
 TIMEOUT_THRESHOLD: float = -0.3  # If a member's shallow score falls below this value, member gets timed out
-TIMEOUT_NOTIFICATION_THRESHOLD: datetime.timedelta = datetime.timedelta(minutes=0.5)  # If a member gets timed out for more than this, member gets notified
-TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0, TIMEOUT_THRESHOLD: TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds() / 60.0, -1.0: 20.0, -2.0: 300.0, -3.0: 10080.0, -4.0: 10080.0}  # Score: Timeout duration (minutes)
-REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1256626845970075779, 1256627378763993189},
-                                  {1261372426382737610, 1261371054161662044}]  # Ids of roles that are required to access the server
+TIMEOUT_NOTIFICATION_THRESHOLD: datetime.timedelta = datetime.timedelta(
+    minutes=0.5)  # If a member gets timed out for more than this, member gets notified
+TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0,
+                                                TIMEOUT_THRESHOLD: TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds() / 60.0,
+                                                -1.0: 20.0, -2.0: 300.0, -3.0: 10080.0,
+                                                -4.0: 10080.0}  # Score: Timeout duration (minutes)
+REQUIRED_ROLES: list[set[int]] = [
+    {1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174},
+    {1256626845970075779, 1256627378763993189},
+    {1261372426382737610, 1261371054161662044}]  # Ids of roles that are required to access the server
 MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
     f"Hi there. It seems like you're missing some roles, which is why {'you\'ve been temporarily timed out' if not timed_out else 'your disrespect timeout has been put on hold and will stop decreasing'}. No worries, "
     f"though! To {'regain access to the server' if not timed_out else 'keep serving your disrespect timeout until it\'s done'}, just visit the <id:customize> tab to assign yourself the necessary roles. If you have any "
@@ -169,9 +175,22 @@ class MemberEntry:
         # If the key does not exist, do not provide the argument
         return cls(**{key: data[key] for key in data if key in cls.__init__.__code__.co_varnames})
 
+    def to_dict(self) -> dict:
+        """
+        Convert the member entry to a dictionary.
 
-# Helper function to load data from JSON file
-default_user_entry: dict[str, float] = {"shallow_score": 0.0, "deep_score": 0.0, "credits": compute_credits(0.0)}
+        :return:
+        """
+        # Convert opinion keys from integers to strings
+        return {
+            "shallow_score": self.shallow_score,
+            "deep_score": self.deep_score,
+            "credibility": self.credibility,
+            "opinions": {str(k): v for k, v in self.opinions.items()},
+            "latest_message_time": self.latest_message_time,
+            "conversation_start_time": self.conversation_start_time,
+            "suspended_timeout": self.suspended_timeout
+        }
 
 
 DataType = dict[int, MemberEntry]
@@ -225,7 +244,8 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
             logger.info(f"{member.display_name} has been upgraded to '{RESPECTFUL_ROLE_NAME}'.")
     elif disrespectful_role not in member.roles and respectful_role not in member.roles:
         await member.add_roles(disrespectful_role, reason=f"Bad respect score.")
-        logger.info(f"{member.display_name} has been assigned '{DISRESPECTFUL_ROLE_NAME}' because their roles were missing and their respect score is negative.")
+        logger.info(
+            f"{member.display_name} has been assigned '{DISRESPECTFUL_ROLE_NAME}' because their roles were missing and their respect score is negative.")
     elif score < min(-1.0, -0.01 * sum(not memb.bot for memb in guild.members)):
         if respectful_role in member.roles:
             await member.remove_roles(respectful_role, reason=f"Respect score of {score} is unacceptably bad.")
@@ -289,7 +309,8 @@ class JusticeToolboxView(discord.ui.View):
         """
         select = BanUnbanView()
         # noinspection PyUnresolvedReferences
-        await interaction.response.send_message("Select whether you would like request to ban or to unban a user.", view=select, ephemeral=True)
+        await interaction.response.send_message("Select whether you would like request to ban or to unban a user.",
+                                                view=select, ephemeral=True)
 
 
 class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode for the Current Channel"):
@@ -304,7 +325,8 @@ class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode for the Current Cha
                 raise ValueError("Slowmode must be a non-negative integer.")
         except ValueError:
             # noinspection PyUnresolvedReferences
-            await interaction.response.edit_message(content=f"{ERROR_SYMBOL} Invalid slowmode length. Slowmode must be a non-negative integer.")
+            await interaction.response.edit_message(
+                content=f"{ERROR_SYMBOL} Invalid slowmode length. Slowmode must be a non-negative integer.")
             return
 
         # Optional reset time validation
@@ -316,7 +338,8 @@ class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode for the Current Cha
                     raise ValueError("Reset time must be a positive number.")
             except ValueError:
                 # noinspection PyUnresolvedReferences
-                await interaction.response.edit_message(content=f"{ERROR_SYMBOL} Invalid reset time. Please enter a positive number.")
+                await interaction.response.edit_message(
+                    content=f"{ERROR_SYMBOL} Invalid reset time. Please enter a positive number.")
                 return
 
         if length < 0:
@@ -330,7 +353,8 @@ class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode for the Current Cha
                 content=f"{SUCCESS_SYMBOL} Slowmode for {interaction.channel.mention} has been set to {length} seconds{"s" if length != 1 else ""} {f"with a reset time of {reset_time} minutes" if reset_time is not None else ''}.")
         except discord.errors.Forbidden:
             # noinspection PyUnresolvedReferences
-            await interaction.response.edit_message(f"{ERROR_SYMBOL} I do not have permission to set slowmode in this channel.")
+            await interaction.response.edit_message(
+                f"{ERROR_SYMBOL} I do not have permission to set slowmode in this channel.")
 
 
 BanRequestsType = dict[int, dict[int, dict[str, bool | str]]]  # user_id: {requester_id: ban_request}
@@ -354,7 +378,8 @@ class RequestBanModal(discord.ui.Modal):
             target_object: discord.User = await bot.fetch_user(int(self.target.value))
         except (ValueError, discord.errors.NotFound, discord.errors.HTTPException):
             # noinspection PyUnresolvedReferences
-            await interaction.response.edit_message(content=f"{ERROR_SYMBOL} Invalid user ID. Please enter a valid user ID.")
+            await interaction.response.edit_message(
+                content=f"{ERROR_SYMBOL} Invalid user ID. Please enter a valid user ID.")
             return
 
         reason = self.reason.value
