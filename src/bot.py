@@ -36,7 +36,7 @@ from scipy.interpolate import interp1d
 os.environ['TZ'] = 'UTC'
 time.tzset()
 
-# Parameters
+# ======================================================PARAMETERS======================================================
 GUILD_ID: int = 1201368154174144602
 JUSTICE_COUNT: int = 5
 JUSTICE_CHANNEL_NAME: str = "justices"
@@ -74,7 +74,6 @@ CREDIBILITY_DECAY: int = 10  # Seconds-worth of credibility lost per day
 CREDIBILITY_EARNING_EXCLUSION_CHANNELS: list[int] = [1201374063810064484, 1217615412146077806, 1263269073538515005,
                                                      1217278514298884176]
 
-
 # Record start time
 start_time: float = time.time()
 
@@ -111,6 +110,7 @@ linear_interp = interp1d(x_coords, y_coords, fill_value='extrapolate')  # linear
 # Generate points to plot the function
 x_values: np.ndarray = np.linspace(min(x_coords), max(x_coords), 500)
 y_values: np.ndarray = linear_interp(x_values)
+shutdown_event = asyncio.Event()
 
 
 # ===================================================UTILITY FUNCTIONS==================================================
@@ -734,11 +734,17 @@ async def on_ready() -> None:
         # Load the data
         data_records: DataType = await load_data()
         # Get all the missed messages
-        missed_messages: list[discord.Message] = []
-        after_time: datetime.datetime = datetime.datetime.fromtimestamp(
+        missed_messages = []
+        after_time = datetime.datetime.fromtimestamp(
             max(entry.latest_message_time for entry in
-                data_records.values()) if data_records else discord.utils.DISCORD_EPOCH / 1000)
+                data_records.values()) if data_records else discord.utils.DISCORD_EPOCH / 1000
+        )
+
         for channel in guild_object.channels:
+            if shutdown_event.is_set():
+                logger.info("Shutdown requested. Aborting missed-message gathering.")
+                return  # Exit the function early during shutdown.
+
             if channel not in CREDIBILITY_EARNING_EXCLUSION_CHANNELS:
                 channel_messages = []
                 await get_messages_from_channel(channel, after_time, channel_messages)
@@ -746,8 +752,12 @@ async def on_ready() -> None:
     # Sort
     missed_messages.sort(key=lambda msg: msg.created_at)
     for message in missed_messages:
-        # Process the message
-        await on_message(message)
+        if shutdown_event.is_set():
+            logger.info("Shutdown requested. Halting missed-message processing.")
+            return  # Exit the function early during shutdown.
+        else:
+            # Process the message
+            await on_message(message)
     is_initialized = True
     logger.info("Initialization complete.")
 
