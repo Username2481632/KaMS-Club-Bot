@@ -27,7 +27,7 @@ from types import FrameType
 from typing import Callable
 
 import discord
-import numpy as np
+import numpy
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from scipy.interpolate import interp1d
@@ -103,13 +103,13 @@ logger.addHandler(console_handler)
 guild_object: discord.Guild | None = None
 is_initialized = False
 # Extract x and y coordinates from the dictionary
-x_coords: np.ndarray = np.array(list(TIMEOUT_DURATION_OUTLINE.keys()))
-y_coords: np.ndarray = np.array(list(TIMEOUT_DURATION_OUTLINE.values()))
+x_coords: numpy.ndarray = numpy.array(list(TIMEOUT_DURATION_OUTLINE.keys()))
+y_coords: numpy.ndarray = numpy.array(list(TIMEOUT_DURATION_OUTLINE.values()))
 # Create a linear interpolation function
 linear_interp = interp1d(x_coords, y_coords, fill_value='extrapolate')  # linear interpolation
 # Generate points to plot the function
-x_values: np.ndarray = np.linspace(min(x_coords), max(x_coords), 500)
-y_values: np.ndarray = linear_interp(x_values)
+x_values: numpy.ndarray = numpy.linspace(min(x_coords), max(x_coords), 500)
+y_values: numpy.ndarray = linear_interp(x_values)
 shutdown_event = asyncio.Event()
 
 
