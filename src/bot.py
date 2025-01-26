@@ -3,6 +3,13 @@ This bot is designed to manage the KaMS Club Discord server. It assigns roles to
 automatically time out members with low respect scores and notify them if they have been timed out for more than a certain amount of time. The bot also assigns the Justice role to the top five members with the highest respect scores.
 
 Due to a Discord limitation, you must restrict the /justice_toolbox command visibility to the Justice role manually. To do this, go to server settings -> integrations -> click on "KaMS Club" (manage).
+
+Generating Discord OAuth2 Link:
+- Scopes: applications.commands, bot
+- Bot Permissions:
+  - General: Manage Roles, Manage Channels, Ban Members, Moderate Members
+  - Text: Send Messages, Send Messages in Threads, Manage Messages, Read Message History
+  - Voice: None required.
 """
 import asyncio
 import datetime
