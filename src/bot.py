@@ -708,7 +708,11 @@ async def on_ready() -> None:
         return
     async with data_lock:
         logger.info("Bot is ready, starting to sync commands...")
-        await bot.tree.sync(guild=bot.get_guild(GUILD_ID))
+        guild: discord.Guild | None = bot.get_guild(GUILD_ID)
+        if guild is None:
+            logger.error("Could not find provided guild.")
+            return
+        await bot.tree.sync()
         logger.info("Slash commands synced!")
         day_change.start()
         logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
@@ -730,6 +734,7 @@ async def on_ready() -> None:
         # Process the message
         await on_message(message)
     is_initialized = True
+    logger.info("Initialization complete.")
 
 
 async def get_justice_ids(guild: discord.Guild) -> list[int]:
