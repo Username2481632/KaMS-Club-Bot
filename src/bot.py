@@ -366,8 +366,11 @@ class RequestBanModal(discord.ui.Modal):
         title = "Request Ban" if ban_bool else "Request Unban"
         super().__init__(title=title, **kwargs)
         self.ban_bool = ban_bool
-        self.target: discord.ui.TextInput = discord.ui.TextInput(label=f"User ID to {"Ban" if self.ban_bool else "Unban"}", required=True, placeholder="012345678910111213", style=discord.TextStyle.short)
-        self.reason = discord.ui.TextInput(label=f"Reason for {"Ban" if self.ban_bool else "Unban"}", style=discord.TextStyle.paragraph, required=True, min_length=40)
+        self.target: discord.ui.TextInput = discord.ui.TextInput(
+            label=f"User ID to {"Ban" if self.ban_bool else "Unban"}", required=True, placeholder="012345678910111213",
+            style=discord.TextStyle.short)
+        self.reason = discord.ui.TextInput(label=f"Reason for {"Ban" if self.ban_bool else "Unban"}",
+                                           style=discord.TextStyle.paragraph, required=True, min_length=60)
 
         # Add the text inputs to the modal
         self.add_item(self.target)
@@ -387,12 +390,16 @@ class RequestBanModal(discord.ui.Modal):
         ban_requests: BanRequestsType = read_ban_requests()
         if target_object.id not in ban_requests:
             ban_requests[target_object.id] = {}
+        existing_request: dict[str, bool | str] | None = ban_requests[target_object.id].get(interaction.user.id)
+        request_changed: bool = existing_request['request'] != self.ban_bool if existing_request else False
         ban_requests[target_object.id][interaction.user.id] = {"request": self.ban_bool, "reason": reason}
         save_ban_requests(ban_requests)
         if self.ban_bool:
             # If all current justices have requested a ban, ban the user
             justice_ids: list[int] = await get_justice_ids(interaction.guild)
-            if len(justice_ids) == JUSTICE_COUNT and all(justice_id in ban_requests[target_object.id] and ban_requests[target_object.id][justice_id] for justice_id in justice_ids):
+            if len(justice_ids) == JUSTICE_COUNT and all(
+                    justice_id in ban_requests[target_object.id] and ban_requests[target_object.id][justice_id] for
+                    justice_id in justice_ids):
                 # Ban the user
                 try:
                     await interaction.guild.ban(target_object, reason="Requested by justices.")
@@ -402,18 +409,22 @@ class RequestBanModal(discord.ui.Modal):
         else:
             # If 2/3 of current justices have requested an unban, unban the user
             justice_ids: list[int] = await get_justice_ids(interaction.guild)
-            if sum(1 for justice_id in justice_ids if justice_id in ban_requests[target_object.id] and not ban_requests[target_object.id][justice_id]) >= 2 * len(justice_ids) / 3 and any(
-                    ban.user.id == target_object.id async for ban in interaction.guild.bans()):
+            if sum(1 for justice_id in justice_ids if
+                   justice_id in ban_requests[target_object.id] and not ban_requests[target_object.id][
+                       justice_id]) >= 2 * len(justice_ids) / 3 and any(
+                ban.user.id == target_object.id for ban in [ban async for ban in interaction.guild.bans()]):
                 # Unban the user
                 await interaction.guild.unban(target_object, reason="Requested by justices.")
         # noinspection PyUnresolvedReferences
-        await interaction.response.edit_message(content=f"{SUCCESS_SYMBOL} {"Unb" if not self.ban_bool else 'B'}an request submitted for user \"{target_object.display_name}\".")
+        await interaction.response.edit_message(
+            content=f"{SUCCESS_SYMBOL} {f"{'Unb' if not self.ban_bool else 'B'}an r" if not request_changed else "R"}equest {'submitted' if not existing_request else 'updated' + (f' from **{"ban" if existing_request["request"] else "unban"}** to **{"ban" if self.ban_bool else "unban"}**' if request_changed else '')} for user {self.target.value} (\"{target_object.display_name}\").")
 
 
 class BanUnbanSelect(discord.ui.Select):
     def __init__(self):
         # To make it a multi-select dropdown, add the parameter max_values=2
-        options = [discord.SelectOption(label="Ban", value="ban"), discord.SelectOption(label="Unban", value="unban"), discord.SelectOption(label="Cancel Prior Request", value="cancel")]
+        options = [discord.SelectOption(label="Ban", value="ban"), discord.SelectOption(label="Unban", value="unban"),
+                   discord.SelectOption(label="Cancel Prior Request", value="cancel")]
         super().__init__(placeholder="Select an action", options=options)
 
     async def callback(self, interaction: discord.Interaction):
@@ -425,16 +436,19 @@ class BanUnbanSelect(discord.ui.Select):
             for target_id in ban_requests:
                 if interaction.user.id in ban_requests[target_id]:
                     target_object: discord.User = await bot.fetch_user(target_id)
-                    user_requests.append((target_id, target_object.display_name, ban_requests[target_id][interaction.user.id]["request"]))
+                    user_requests.append((target_id, target_object.display_name,
+                                          ban_requests[target_id][interaction.user.id]["request"]))
             if not user_requests:
                 # noinspection PyUnresolvedReferences
-                await interaction.response.send_message(f"{ERROR_SYMBOL} You have no ban requests to cancel.", ephemeral=True)
+                await interaction.response.send_message(f"{ERROR_SYMBOL} You have no ban requests to cancel.",
+                                                        ephemeral=True, delete_after=15)
             else:
                 select = BanRequestCancelSelect(requests=user_requests)
                 view: discord.ui.View = discord.ui.View()
                 view.add_item(select)
                 # noinspection PyUnresolvedReferences
-                await interaction.response.send_message("Select a ban request to cancel.", view=view, ephemeral=True)
+                await interaction.response.send_message("Select a ban request to cancel.", view=view, ephemeral=True,
+                                                        delete_after=60)
             return
         # Pass the choice to the modal
         modal = RequestBanModal(ban_bool=choice == "ban")
@@ -445,7 +459,8 @@ class BanUnbanSelect(discord.ui.Select):
 class BanRequestCancelSelect(discord.ui.Select):
     def __init__(self, requests: list[tuple[int, str, bool]]):
         # Ban/Unban [User id] ("display name")
-        options = [discord.SelectOption(label=f'{"Ban" if request[2] else "Unban"} {request[0]} ("{request[1]}")', value=str(request[0])) for request in requests]
+        options = [discord.SelectOption(label=f'{"Ban" if request[2] else "Unban"} {request[0]} ("{request[1]}")',
+                                        value=str(request[0])) for request in requests]
         super().__init__(placeholder="Select a ban request to cancel", options=options)
         self.requests = requests
 
@@ -459,7 +474,9 @@ class BanRequestCancelSelect(discord.ui.Select):
                 save_ban_requests(ban_requests)
                 # noinspection PyUnresolvedReferences
                 # Find the user id in the self.requests list and get the display name
-                await interaction.response.send_message(f"{SUCCESS_SYMBOL} Ban request for user {target_id} (\"{next(request[1] for request in self.requests if request[0] == target_id)}\") has been cancelled.", ephemeral=True)
+                await interaction.response.send_message(
+                    f"{SUCCESS_SYMBOL} Ban request for user {target_id} (\"{next(request[1] for request in self.requests if request[0] == target_id)}\") has been cancelled.",
+                    ephemeral=True)
                 break
 
 
@@ -474,9 +491,10 @@ def read_ban_requests() -> BanRequestsType:
     Read the ban requests from the JSON file.
     :return:
     """
-    if os.path.exists("ban_requests.json"):
-        with open("ban_requests.json") as file:
-            return {int(key): {int(subkey): value for subkey, value in subdict.items()} for key, subdict in json.load(file).items()}
+    if os.path.exists("../ban_requests.json"):
+        with open("../ban_requests.json") as file:
+            return {int(key): {int(subkey): value for subkey, value in subdict.items()} for key, subdict in
+                    json.load(file).items()}
     return {}
 
 
@@ -485,8 +503,9 @@ def save_ban_requests(ban_requests: BanRequestsType) -> None:
     Save the ban requests to the JSON file.
     :param ban_requests:
     """
-    with open("ban_requests.json", "w") as file:
-        json.dump({str(key): {str(subkey): value for subkey, value in subdict.items()} for key, subdict in ban_requests.items()}, file, indent=2)
+    with open("../ban_requests.json", "w") as file:
+        json.dump({str(key): {str(subkey): value for subkey, value in subdict.items()} for key, subdict in
+                   ban_requests.items()}, file, indent=2)
 
 
 @bot.tree.command(name="justice_toolbox", description="Access the Justice Toolbox.")
@@ -529,11 +548,14 @@ async def my_opinions(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(output, ephemeral=True)
 
 
-@bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
+@bot.tree.command(name="vote",
+                  description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
 @commands.guild_only()
-async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float, reason: str, hidden: bool) -> None:
+async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float, reason: str,
+                     hidden: bool) -> None:
     """
     Vote for a user with a severity ranging from -1 to 1.
+    :param hidden:
     :param reason:
     :param interaction:
     :param target:
@@ -554,8 +576,10 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
             await on_member_join(target_member)
         if -1.0 > severity or severity > 1.0:
             # noinspection PyUnresolvedReferences
-            await interaction.response.send_message("Invalid severity value. Please use a value between -1 and 1.", ephemeral=True)
-            logger.info(f"Invalid severity value for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
+            await interaction.response.send_message("Invalid severity value. Please use a value between -1 and 1.",
+                                                    ephemeral=True)
+            logger.info(
+                f"Invalid severity value for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
             return
         data[interaction.user.id].opinions[target.id] = (
                 data[interaction.user.id].opinions[target.id] + severity) if target.id in data[
@@ -579,7 +603,8 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
                 timeout_minutes = calculate_timeout(
                     data[target.id].shallow_score + min(data[target.id].deep_score, 0.5))
                 old_duration: datetime.timedelta = datetime.timedelta()
-                if target_member.timed_out_until is not None and (target_member.timed_out_until - discord.utils.utcnow()) > old_duration:
+                if target_member.timed_out_until is not None and (
+                        target_member.timed_out_until - discord.utils.utcnow()) > old_duration:
                     old_duration = target_member.timed_out_until - discord.utils.utcnow()
                 new_duration: datetime.timedelta = datetime.timedelta(minutes=timeout_minutes)
                 if (severity < 0 or new_duration < old_duration) and new_duration != old_duration:
@@ -589,14 +614,16 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
                     else:
                         try:
                             await target_member.edit(timed_out_until=until, reason=f"Voted {severity} by a member.")
-                            logger.info(f"{target_member.display_name} has been timed out for {timeout_minutes} minutes.")
+                            logger.info(
+                                f"{target_member.display_name} has been timed out for {timeout_minutes} minutes.")
                             if old_duration < TIMEOUT_NOTIFICATION_THRESHOLD < new_duration:
                                 await dm_member(target_member,
                                                 f"You have been timed out for {timeout_minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out "
                                                 f"to a "
                                                 f"moderator.")
                         except discord.errors.Forbidden:
-                            logger.error(f"Forbidden to timeout user \"{target_member.display_name}\" (id={target_member.id}).")
+                            logger.error(
+                                f"Forbidden to timeout user \"{target_member.display_name}\" (id={target_member.id}).")
 
         save_data(data)
 
@@ -610,7 +637,8 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
                 f"Vote successful! Your opinion on {target.display_name} is now {data[interaction.user.id].opinions[target.id]}",
                 ephemeral=True, delete_after=15)
         except discord.errors.NotFound:
-            logger.error(f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long. Proceeding to send a DM.")
+            logger.error(
+                f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long. Proceeding to send a DM.")
             await dm_member(interaction.user,
                             f"With apologies for the delay, your vote for {target.display_name} with severity {severity} has been successfully processed. Your opinion on {target.display_name} is now "
                             f"{data[interaction.user.id].opinions[target.id]}.")
@@ -674,9 +702,11 @@ async def get_justice_ids(guild: discord.Guild) -> list[int]:
     :return:
     """
     # Fetch justice ids from the justices channel
-    justice_channel_category: discord.CategoryChannel | None = discord.utils.get(guild.categories, name=JUSTICE_CHANNEL_CATEGORY)
+    justice_channel_category: discord.CategoryChannel | None = discord.utils.get(guild.categories,
+                                                                                 name=JUSTICE_CHANNEL_CATEGORY)
     if justice_channel_category is not None:
-        justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
+        justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels,
+                                                                        name=JUSTICE_CHANNEL_NAME)
         if justice_channel is not None:
             async for message in justice_channel.history(limit=1):
                 if message.author == bot.user:
@@ -708,8 +738,9 @@ async def on_member_join(member: discord.Member, data: DataType | None = None) -
         # If the member joined over 5 minutes ago
         if (discord.utils.utcnow() - member.joined_at).total_seconds() > 300:
             sending_message += "With apologies for the delay,\n"
-        sending_message += ("Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. "
-                            "Thanks!")
+        sending_message += (
+            "Welcome to the KaMS Club Discord server! As you may have noticed in the rules, your nickname must include your real-life name. Please make sure to update your nickname accordingly if you haven't already. "
+            "Thanks!")
         await dm_member(member, sending_message)
         message_sent = True
 
@@ -721,7 +752,8 @@ async def on_member_join(member: discord.Member, data: DataType | None = None) -
     await set_respect_role(member.guild, member, data[member.id].shallow_score + data[member.id].deep_score)
     if locked:
         data_lock.release()
-    logger.info(f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time) " if not message_sent else ""}and their roles have been set.")
+    logger.info(
+        f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time) " if not message_sent else ""}and their roles have been set.")
 
 
 async def set_justice_role(member: discord.Member, justice_ids: list[int]) -> None:
@@ -752,7 +784,8 @@ def justice_score(data: DataType, member: discord.Member) -> tuple[float, dateti
     return data[member.id].deep_score, member.joined_at
 
 
-def is_timeout_prolongation_log(message: discord.Message, target_member_ids: list[int]) -> bool:  # THIS WILL NEED UPDATING IF THERE IS A CHANGE IN THE LOGGING FORMAT
+def is_timeout_prolongation_log(message: discord.Message, target_member_ids: list[
+    int]) -> bool:  # THIS WILL NEED UPDATING IF THERE IS A CHANGE IN THE LOGGING FORMAT
     """
     Check if the message is a timeout prolongation log.
     :param message:
@@ -761,7 +794,9 @@ def is_timeout_prolongation_log(message: discord.Message, target_member_ids: lis
     """
     if message.author.id == ELARA_LOGGER_ID:
         for embed in message.embeds:
-            if embed.title != "Member Timeout: Updated" or not any(str(memb_id) in embed.fields[0].value for memb_id in target_member_ids) or str(bot.user.id) not in embed.fields[1].value or embed.fields[3].value != ROLE_TIMEOUT_REASON:
+            if embed.title != "Member Timeout: Updated" or not any(
+                    str(memb_id) in embed.fields[0].value for memb_id in target_member_ids) or str(bot.user.id) not in \
+                    embed.fields[1].value or embed.fields[3].value != ROLE_TIMEOUT_REASON:
                 return False
     return True
 
@@ -778,7 +813,8 @@ async def day_change() -> None:
         backup_file_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data_backup"))
         if not os.path.exists(backup_file_path):
             os.makedirs(backup_file_path)
-        save_data(data, backup_file_path + f"/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json")  # Backup data
+        save_data(data,
+                  backup_file_path + f"/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json")  # Backup data
 
         guild: discord.Guild | None = bot.get_guild(GUILD_ID)
         if guild is None:
@@ -830,11 +866,13 @@ async def day_change() -> None:
                             data[member_id].suspended_timeout = 0.0 if not was_timed_out else max(0.0, (
                                     member.timed_out_until - discord.utils.utcnow()).total_seconds())
                             await dm_member(member, MISSING_ROLE_MESSAGE(was_timed_out))
-                            logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
+                            logger.info(
+                                f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
                         else:
                             log_deletions.append(member_id)
                     except discord.errors.Forbidden:
-                        logger.error(f"Forbidden to timeout user \"{member.display_name}\" (id={member_id}) for missing required roles.")
+                        logger.error(
+                            f"Forbidden to timeout user \"{member.display_name}\" (id={member_id}) for missing required roles.")
 
         save_data(data)
     logger.info("Data update complete.")
@@ -847,16 +885,20 @@ async def day_change() -> None:
     if not message_content:
         message_content = "No justices have been determined yet."
 
-    justice_channel_category: discord.CategoryChannel | None = discord.utils.get(guild.categories, name=JUSTICE_CHANNEL_CATEGORY)
+    justice_channel_category: discord.CategoryChannel | None = discord.utils.get(guild.categories,
+                                                                                 name=JUSTICE_CHANNEL_CATEGORY)
     if justice_channel_category is None:
         justice_channel_category = await guild.create_category(JUSTICE_CHANNEL_CATEGORY)
         assert justice_channel_category is not None
-    justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME)
+    justice_channel: discord.TextChannel | None = discord.utils.get(justice_channel_category.text_channels,
+                                                                    name=JUSTICE_CHANNEL_NAME)
     found: bool = False
     previous_justice_ids: set[int] = set()
     if justice_channel is None:
-        justice_channel = await justice_channel_category.create_text_channel(JUSTICE_CHANNEL_NAME, overwrites={guild.default_role: discord.PermissionOverwrite(send_messages=False, create_public_threads=False, create_private_threads=False),
-                                                                                                               discord.utils.get(guild.roles, name="KaMS Club"): discord.PermissionOverwrite(send_messages=True)})
+        justice_channel = await justice_channel_category.create_text_channel(JUSTICE_CHANNEL_NAME, overwrites={
+            guild.default_role: discord.PermissionOverwrite(send_messages=False, create_public_threads=False,
+                                                            create_private_threads=False),
+            discord.utils.get(guild.roles, name="KaMS Club"): discord.PermissionOverwrite(send_messages=True)})
     else:
         async for message in justice_channel.history():
             if message.author == bot.user:
@@ -867,12 +909,16 @@ async def day_change() -> None:
                 found = True
     if not found:
         # Only mention the justices that aren't in previous_justice_ids
-        await justice_channel.send(message_content, allowed_mentions=discord.AllowedMentions(users=[discord.Object(id=justice_id) for justice_id in set(justice.id for justice in justices) - previous_justice_ids]))
+        await justice_channel.send(message_content, allowed_mentions=discord.AllowedMentions(
+            users=[discord.Object(id=justice_id) for justice_id in
+                   set(justice.id for justice in justices) - previous_justice_ids]))
 
     polls_channel: discord.TextChannel | None = discord.utils.get(guild.text_channels, name="polls")
     if polls_channel is not None:
         deleted_count: int = len(
-            await polls_channel.purge(after=datetime.datetime(year=2024, month=7, day=14), check=lambda msg: msg.poll is None and not msg.pinned and not msg.content.startswith("[POLL]"), bulk=True, limit=None, oldest_first=True,
+            await polls_channel.purge(after=datetime.datetime(year=2024, month=7, day=14), check=lambda
+                msg: msg.poll is None and not msg.pinned and not msg.content.startswith("[POLL]"), bulk=True,
+                                      limit=None, oldest_first=True,
                                       reason="Clean up non-poll messages."))
         if deleted_count > 0:
             logger.info(f"Deleted {deleted_count} non-poll messages in the polls channel.")
@@ -882,9 +928,12 @@ async def day_change() -> None:
     logger_channel: discord.TextChannel | None = discord.utils.get(guild.text_channels, name=LOGGER_CHANNEL_NAME)
     if logger_channel is not None:
         # Use the day_change_time of today as the after parameter
-        deleted = await logger_channel.purge(after=datetime.datetime.combine(datetime.date.today(), DAY_CHANGE_TIME), check=lambda msg: is_timeout_prolongation_log(msg, log_deletions), bulk=True, limit=None, reason="Clean up timeout logs.")
+        deleted = await logger_channel.purge(after=datetime.datetime.combine(datetime.date.today(), DAY_CHANGE_TIME),
+                                             check=lambda msg: is_timeout_prolongation_log(msg, log_deletions),
+                                             bulk=True, limit=None, reason="Clean up timeout logs.")
         logger.info(f"Deleted {len(deleted)} role timeout prolongation logs from the logger channel.")
     logger.info("Full day change complete.")
+
 
 # When a user updates their roles, check if they have the required roles
 @bot.event
@@ -897,7 +946,8 @@ async def on_member_update(before: discord.Member, after: discord.Member):
     """
     if before.roles == after.roles:
         return
-    if not all(set(rl.id for rl in before.roles) & role_category for role_category in REQUIRED_ROLES) and all(set(rl.id for rl in after.roles) & role_category for role_category in REQUIRED_ROLES):
+    if not all(set(rl.id for rl in before.roles) & role_category for role_category in REQUIRED_ROLES) and all(
+            set(rl.id for rl in after.roles) & role_category for role_category in REQUIRED_ROLES):
         assert before.id == after.id
         async with data_lock:
             data: DataType = await load_data()
@@ -911,10 +961,13 @@ async def on_member_update(before: discord.Member, after: discord.Member):
                     else:
                         await after.timeout(None, reason="Acquired necessary roles.")
                 except discord.errors.Forbidden:
-                    logger.error(f"Forbidden to untimeout user \"{after.display_name}\" (id={after.id}) for role acquisition.")
+                    logger.error(
+                        f"Forbidden to untimeout user \"{after.display_name}\" (id={after.id}) for role acquisition.")
                     return
-                logger.info(f"{after.display_name} (id={after.id}) has been untimed out due to acquiring the necessary roles.")
-                if after.timed_out_until is not None and (after.timed_out_until - discord.utils.utcnow()) > TIMEOUT_NOTIFICATION_THRESHOLD:
+                logger.info(
+                    f"{after.display_name} (id={after.id}) has been untimed out due to acquiring the necessary roles.")
+                if after.timed_out_until is not None and (
+                        after.timed_out_until - discord.utils.utcnow()) > TIMEOUT_NOTIFICATION_THRESHOLD:
                     logger.info(
                         f"{after.display_name} (id={after.id}) still has a respect timeout of {data[after.id].suspended_timeout / 60.0} minutes to serve.")
                     await dm_member(after,
