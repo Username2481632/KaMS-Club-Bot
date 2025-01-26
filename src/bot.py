@@ -627,10 +627,10 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
 
         save_data(data)
 
-        # Send a message publicly
-        public_message: str = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}. Reason: {reason}"
-        await interaction.channel.send(public_message)
-
+        if not hidden:
+            # Send a message publicly
+            public_message: str = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}. Reason: {reason}"  # If changing this line, also update on_message.
+            await interaction.channel.send(public_message)
         try:
             # noinspection PyUnresolvedReferences
             await interaction.response.send_message(
