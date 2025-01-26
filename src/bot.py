@@ -350,7 +350,7 @@ class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode for the Current Cha
             await interaction.channel.edit(slowmode_delay=length)
             # noinspection PyUnresolvedReferences
             await interaction.response.edit_message(
-                content=f"{SUCCESS_SYMBOL} Slowmode for {interaction.channel.mention} has been set to {length} seconds{"s" if length != 1 else ""} {f"with a reset time of {reset_time} minutes" if reset_time is not None else ''}.")
+                content=f"{SUCCESS_SYMBOL} Slowmode for {interaction.channel.mention} has been set to {length} second{"s" if length != 1 else ""} {f"with a reset time of {reset_time} minutes" if reset_time is not None else ''}.")
         except discord.errors.Forbidden:
             # noinspection PyUnresolvedReferences
             await interaction.response.edit_message(
