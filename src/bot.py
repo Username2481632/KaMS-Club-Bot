@@ -123,6 +123,7 @@ def calculate_timeout(x: fractions.Fraction) -> float:
     """
     return float(linear_interp(float(x)))
 
+
 class MemberEntry:
     """
     Class to represent a member entry in the data file.
@@ -139,12 +140,6 @@ class MemberEntry:
         Initialize the member entry.
 
         :param shallow_score:
-        :param deep_score: 
-        :param credibility: 
-        :param opinions: 
-        :param latest_message_time: 
-        :param conversation_start_time: 
-        :param suspended_timeout: 
         :param deep_score:
         :param credibility:
         :param opinions:
@@ -357,10 +352,15 @@ class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode for the Current Cha
             await interaction.response.edit_message(content=f"{ERROR_SYMBOL} Slowmode must be a non-negative integer.")
             return
         try:
-            await interaction.channel.edit(slowmode_delay=length)
+            await interaction.channel.edit(slowmode_delay=length,
+                                           reason=f"Set by user {interaction.user.id} (\"{interaction.user.display_name}\") via Justice Toolbox")
             # noinspection PyUnresolvedReferences
             await interaction.response.edit_message(
                 content=f"{SUCCESS_SYMBOL} Slowmode for {interaction.channel.mention} has been set to {length} second{"s" if length != 1 else ""} {f"with a reset time of {reset_time} minutes" if reset_time is not None else ''}.")
+            if reset_time is not None:
+                await asyncio.sleep(reset_time * 60.0)
+                await interaction.channel.edit(slowmode_delay=0,
+                                               reason=f"Reset from command by user {interaction.user.id} via Justice Toolbox")
         except discord.errors.Forbidden:
             # noinspection PyUnresolvedReferences
             await interaction.response.edit_message(
@@ -871,7 +871,7 @@ async def day_change() -> None:
         if not os.path.exists(backup_file_path):
             os.makedirs(backup_file_path)
         await save_data(data,
-                  backup_file_path + f"/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json")  # Backup data
+                        backup_file_path + f"/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json")  # Backup data
 
         guild: discord.Guild | None = bot.get_guild(GUILD_ID)
         if guild is None:
