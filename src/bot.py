@@ -46,7 +46,6 @@ DISRESPECTFUL_ROLE_NAME: str = "Disrespectful :("
 TIMEOUT_THRESHOLD: float = -0.3  # If a member's shallow score falls below this value, member gets timed out
 TIMEOUT_NOTIFICATION_THRESHOLD: datetime.timedelta = datetime.timedelta(minutes=0.5)  # If a member gets timed out for more than this, member gets notified
 TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0, TIMEOUT_THRESHOLD: TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds() / 60.0, -1.0: 20.0, -2.0: 300.0, -3.0: 10080.0, -4.0: 10080.0}  # Score: Timeout duration (minutes)
-CREDIT_THRESHOLDS = {float('-inf'): 0.0, 0.2: 0.125, 0.25: 0.1875, 0.5: 0.5, 1.0: 0.875}  # deep_score threshold: credits
 REQUIRED_ROLES: list[set[int]] = [{1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174}, {1256626845970075779, 1256627378763993189},
                                   {1261372426382737610, 1261371054161662044}]  # Ids of roles that are required to access the server
 MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
@@ -64,6 +63,10 @@ SUCCESS_SYMBOL = ":white_check_mark:"
 ELARA_LOGGER_ID: int = 1274076825009655863
 LOGGER_CHANNEL_NAME: str = "logger"
 ROLE_TIMEOUT_REASON: str = "Missing required roles."
+CREDIBILITY_RATIO: float = 2.0e-20  # Credibility earned per second of conversation
+CREDIBILITY_DECAY: int = 10  # Seconds-worth of credibility lost per day
+CREDIBILITY_EARNING_EXCLUSION_CHANNELS: list[int] = [1201374063810064484, 1217615412146077806, 1263269073538515005,
+                                                     1217278514298884176]
 
 # Record start time
 start_time: float = time.time()
@@ -121,28 +124,59 @@ def calculate_timeout(x: float) -> float:
 x_values: np.ndarray = np.linspace(min(x_coords), max(x_coords), 500)
 y_values: np.ndarray = linear_interp(x_values)
 
-# Extract the keys and values from the CREDIT_THRESHOLDS dictionary
-thresholds = np.array(list(CREDIT_THRESHOLDS.keys()))
-credit_allocations = np.array(list(CREDIT_THRESHOLDS.values()))
 
-# Create an interpolation function
-credit_calculation_function = interp1d(thresholds, credit_allocations, kind="previous", fill_value="extrapolate")
-
-
-def compute_credits(deep_score: float) -> float:
+class MemberEntry:
     """
-    Compute the credits based on the deep score.
-    :param deep_score:
-    :return:
+    Class to represent a member entry in the data file.
     """
-    return float(credit_calculation_function(deep_score))
+
+    def __init__(self, shallow_score: float = 0.0, deep_score: float = 0.0, credibility: float = 0.0,
+                 opinions: dict[int, float] | None = None,
+                 latest_message_time: float = discord.utils.DISCORD_EPOCH / 1000,
+                 conversation_start_time: float = discord.utils.DISCORD_EPOCH / 1000,
+                 suspended_timeout: float | None = None) -> None:
+        """
+        Initialize the member entry.
+
+        :param shallow_score:
+        :param deep_score: 
+        :param credibility: 
+        :param opinions: 
+        :param latest_message_time: 
+        :param conversation_start_time: 
+        :param suspended_timeout: 
+        """
+        self.shallow_score = shallow_score
+        self.deep_score = deep_score
+        self.credibility = credibility
+        self.opinions = opinions if opinions is not None else {}
+        self.latest_message_time = latest_message_time
+        self.conversation_start_time = conversation_start_time
+        self.suspended_timeout = suspended_timeout
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "MemberEntry":
+        """
+        Create a MemberEntry from a dictionary.
+
+        :param data:
+        :return: 
+        """
+        # Convert opinion keys back from strings to integers
+        if "opinions" in data:
+            data["opinions"] = {int(k): v for k, v in data["opinions"].items()}
+
+        # If the key does not exist, do not provide the argument
+        return cls(**{key: data[key] for key in data if key in cls.__init__.__code__.co_varnames})
 
 
 # Helper function to load data from JSON file
 default_user_entry: dict[str, float] = {"shallow_score": 0.0, "deep_score": 0.0, "credits": compute_credits(0.0)}
 
-DataType = dict[int, dict[str, float]]
 
+DataType = dict[int, MemberEntry]
+
+# VARIABLE INITIALIZATION
 data_lock = asyncio.Lock()
 
 
@@ -151,10 +185,10 @@ async def load_data() -> DataType:
     Load data from the JSON file.
     :return:
     """
-    if not os.path.exists(data_file):
-        return {}
-    with open(data_file) as file:  # Read file, converting the ids to integers
-        return {int(key): value for key, value in json.load(file).items()}
+    if os.path.exists(data_file):
+        with open(data_file) as file:
+            return {int(key): MemberEntry.from_dict(value) for key, value in json.load(file).items()}
+    return {}
 
 
 # Helper function to save data to JSON file
@@ -164,10 +198,8 @@ def save_data(data: DataType, output_file: str = data_file) -> None:
     :param output_file:
     :param data:
     """
-    # Convert the keys to strings
-    converted_data = {str(key): value for key, value in data.items()}
-    with open(output_file, 'w') as file:
-        json.dump(converted_data, file, indent=2)
+    with open(output_file, "w", encoding="utf-8") as file:
+        json.dump({str(key): value.to_dict() for key, value in data.items()}, file, indent=2)
 
 
 async def set_respect_role(guild: discord.Guild, member: discord.Member, score: float) -> None:
@@ -203,12 +235,35 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
 
 
 @bot.event
-async def on_message(_message: discord.Message) -> None:
+async def on_message(message: discord.Message) -> None:
     """
 
-    :param _message:
+    :param message:
     """
-    pass
+    if not is_initialized:
+        return
+    # update the user's [latest_message_time] and [conversation_start_time] in the data file
+    author_id: int = message.author.id
+    if message.author == bot.user and message.mentions:
+        author_id = message.mentions[0].id
+
+    async with data_lock:
+        data: DataType = await load_data()
+        if author_id not in data:
+            await on_member_join(message.author, data)
+
+        # Get the timestamp of the message (use edited_at if available, else use created_at)
+        message_timestamp: float = message.edited_at.timestamp() if message.edited_at else message.created_at.timestamp()
+
+        # Check if the difference in time is greater than 300 seconds (5 minutes)
+        if message_timestamp - data[author_id].latest_message_time > 300:
+            # Update credibility based on the time difference and reset conversation start time
+            data[author_id].credibility += (message_timestamp - data[
+                author_id].conversation_start_time) / CREDIBILITY_RATIO
+            data[author_id].conversation_start_time = message_timestamp
+
+        data[author_id].latest_message_time = message_timestamp
+        save_data(data)
 
 
 class JusticeToolboxView(discord.ui.View):
@@ -427,10 +482,26 @@ async def slash_justice_toolbox(interaction: discord.Interaction) -> None:
     await interaction.response.send_message("Justice Toolbox", view=JusticeToolboxView(), ephemeral=True)
 
 
-async def my_opinion() -> None:
+@bot.tree.command(name="my_opinions", description="View your opinions, constructed from your votes.")
+async def my_opinions(interaction: discord.Interaction) -> None:
     """
     Output a table of percentages, adding to <= 1
     """
+    output = ""
+    async with data_lock:
+        data: DataType = await load_data()
+        if interaction.user.id not in data:
+            await on_member_join(interaction.user)
+
+        if len(data[interaction.user.id].opinions) == 0:
+            # noinspection PyUnresolvedReferences
+            await interaction.response.send_message("You have not voted on anyone yet.", ephemeral=True)
+            return
+        for target_id, severity in data[interaction.user.id].opinions.items():
+            target: discord.User = await bot.fetch_user(target_id)
+            output += f"**{target.display_name}**: {severity}\n"
+    # noinspection PyUnresolvedReferences
+    await interaction.response.send_message(output, ephemeral=True)
 
 
 @bot.tree.command(name="vote", description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
@@ -456,34 +527,40 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
         target_member: discord.Member | None = interaction.guild.get_member(target.id)
         if target.id not in data and target_member is not None:
             await on_member_join(target_member)
-        if -1.0 <= severity <= 1.0:
-            if abs(severity) > data[interaction.user.id]["credits"]:
-                # noinspection PyUnresolvedReferences
-                await interaction.response.send_message(f"Insufficient credits! You only have {data[interaction.user.id]['credits']} credits remaining.", ephemeral=True, delete_after=15)
-                logger.info(f"Insufficient credits for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
-                return
-            else:
-                data[interaction.user.id]["credits"] = float(Decimal(str(data[interaction.user.id]["credits"])) - Decimal(str(abs(severity))))
-        else:
+        if -1.0 > severity or severity > 1.0:
             # noinspection PyUnresolvedReferences
             await interaction.response.send_message("Invalid severity value. Please use a value between -1 and 1.", ephemeral=True)
             logger.info(f"Invalid severity value for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
             return
+        data[interaction.user.id].opinions[target.id] = (
+                data[interaction.user.id].opinions[target.id] + severity) if target.id in data[
+            interaction.user.id].opinions else severity
 
-        data[target.id]["shallow_score"] = float(Decimal(str(data[target.id]["shallow_score"])) + Decimal(str(severity)))
+        # And adjust the rest of the user's opinions to make sure their absolute sum is less than or equal to 1
+        adjust_factor: float = 1.0 / max(1.0, sum(abs(value) for value in data[interaction.user.id].opinions.values()))
+        severity *= adjust_factor
+        for key in data[interaction.user.id].opinions:
+            data[interaction.user.id].opinions[key] *= adjust_factor
+        assert sum(map(abs, data[interaction.user.id].opinions.values())) <= 1.0
+
+        data[target.id].shallow_score = float(
+            Decimal(str(data[target.id].shallow_score)) + Decimal(str(severity)) * max(
+                Decimal(str(data[interaction.user.id].credibility)), Decimal("0.0")))
         if target_member is not None:
-            await set_respect_role(interaction.guild, target_member, data[target.id]["shallow_score"] + data[target.id]["deep_score"])
-            if data[target.id]["shallow_score"] < (TIMEOUT_THRESHOLD + 1.0):
+            await set_respect_role(interaction.guild, target_member,
+                                   data[target.id].shallow_score + data[target.id].deep_score)
+            if data[target.id].shallow_score < (TIMEOUT_THRESHOLD + 1.0):
                 # Timeout procedure
-                timeout_minutes = calculate_timeout(data[target.id]["shallow_score"] + min(data[target.id]["deep_score"], 0.5))
+                timeout_minutes = calculate_timeout(
+                    data[target.id].shallow_score + min(data[target.id].deep_score, 0.5))
                 old_duration: datetime.timedelta = datetime.timedelta()
                 if target_member.timed_out_until is not None and (target_member.timed_out_until - discord.utils.utcnow()) > old_duration:
                     old_duration = target_member.timed_out_until - discord.utils.utcnow()
                 new_duration: datetime.timedelta = datetime.timedelta(minutes=timeout_minutes)
                 if (severity < 0 or new_duration < old_duration) and new_duration != old_duration:
                     until: datetime.datetime = discord.utils.utcnow() + new_duration
-                    if "suspended_timeout" in data[target_member.id]:
-                        data[target_member.id]["suspended_timeout"] = new_duration.total_seconds()
+                    if data[target_member.id].suspended_timeout is not None:
+                        data[target_member.id].suspended_timeout = new_duration.total_seconds()
                     else:
                         try:
                             await target_member.edit(timed_out_until=until, reason=f"Voted {severity} by a member.")
@@ -504,28 +581,14 @@ async def slash_vote(interaction: discord.Interaction, target: discord.User, sev
 
         try:
             # noinspection PyUnresolvedReferences
-            await interaction.response.send_message(f"Vote successful! You have {data[interaction.user.id]['credits']} credits remaining.", ephemeral=True, delete_after=15)
+            await interaction.response.send_message(
+                f"Vote successful! Your opinion on {target.display_name} is now {data[interaction.user.id].opinions[target.id]}",
+                ephemeral=True, delete_after=15)
         except discord.errors.NotFound:
             logger.error(f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long. Proceeding to send a DM.")
-            await dm_member(interaction.user, f"With apologies for the delay, your vote for {target.display_name} with severity {severity} has been successfully processed. You have {data[interaction.user.id]['credits']} credits remaining.")
-
-
-@bot.tree.command(name="credits", description="Check the number of credits you have.")
-async def slash_credits(interaction: discord.Interaction) -> None:
-    """
-    Check the number of credits a user has.
-    :param interaction:
-    :return:
-    """
-    async with data_lock:
-        data: DataType = await load_data()
-        if interaction.user.id not in data:
-            await on_member_join(interaction.user)
-        try:
-            # noinspection PyUnresolvedReferences
-            await interaction.response.send_message(f"You have {data[interaction.user.id]['credits']} credits remaining.", ephemeral=True)
-        except discord.errors.NotFound:
-            logger.error(f"Interaction not found to send credit count to \"{interaction.user.display_name}\". Processing may have taken too long.")
+            await dm_member(interaction.user,
+                            f"With apologies for the delay, your vote for {target.display_name} with severity {severity} has been successfully processed. Your opinion on {target.display_name} is now "
+                            f"{data[interaction.user.id].opinions[target.id]}.")
 
 
 async def dm_member(member: discord.Member, message: str) -> None:
@@ -559,6 +622,23 @@ async def on_ready() -> None:
         logger.info("Slash commands synced!")
         day_change.start()
         logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
+        logger.info("Catching up on missed messages...")
+        # Load the data
+        data: DataType = await load_data()
+        # Get all the missed messages
+        missed_messages: list[discord.Message] = []
+        after_time: datetime.datetime = datetime.datetime.fromtimestamp(
+            max(entry.latest_message_time for entry in data.values()) if data else discord.utils.DISCORD_EPOCH / 1000)
+        for channel in guild.channels:
+            if channel not in CREDIBILITY_EARNING_EXCLUSION_CHANNELS:
+                channel_messages = []
+                await get_messages_from_channel(channel, after_time, channel_messages)
+                missed_messages.extend(channel_messages)
+    # Sort
+    missed_messages.sort(key=lambda msg: msg.created_at)
+    for message in missed_messages:
+        # Process the message
+        await on_message(message)
     is_initialized = True
 
 
@@ -608,12 +688,12 @@ async def on_member_join(member: discord.Member, data: DataType | None = None) -
         await dm_member(member, sending_message)
         message_sent = True
 
-        data[member.id] = default_user_entry
+        data[member.id] = MemberEntry()
         save_data(data)
     else:
         await set_justice_role(member, await get_justice_ids(member.guild))
 
-    await set_respect_role(member.guild, member, data[member.id]["shallow_score"] + data[member.id]["deep_score"])
+    await set_respect_role(member.guild, member, data[member.id].shallow_score + data[member.id].deep_score)
     if locked:
         data_lock.release()
     logger.info(f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time) " if not message_sent else ""}and their roles have been set.")
@@ -644,7 +724,7 @@ def justice_score(data: DataType, member: discord.Member) -> tuple[float, dateti
     :param member:
     :return:
     """
-    return data[member.id]["deep_score"], member.joined_at
+    return data[member.id].deep_score, member.joined_at
 
 
 def is_timeout_prolongation_log(message: discord.Message, target_member_ids: list[int]) -> bool:  # THIS WILL NEED UPDATING IF THERE IS A CHANGE IN THE LOGGING FORMAT
@@ -686,22 +766,25 @@ async def day_change() -> None:
                 if member.id not in data:
                     await on_member_join(member, data)
         for member_id in data:
-            if data[member_id]["shallow_score"] > 0:
-                data[member_id]["deep_score"] += math.sqrt(data[member_id]["shallow_score"]) / (member_count ** (1 / 3))
-                data[member_id]["shallow_score"] = 0.0
-            elif data[member_id]["shallow_score"] < 0:
-                data[member_id]["deep_score"] += data[member_id]["shallow_score"]
-                data[member_id]["shallow_score"] /= 4.0
-                if data[member_id]["shallow_score"] > -0.01:
-                    data[member_id]["shallow_score"] = 0.0
-            elif data[member_id]["deep_score"] > 0.1:
-                data[member_id]["deep_score"] -= 0.0078125  # 1/28
+            if data[member_id].shallow_score > 0:
+                data[member_id].deep_score += math.sqrt(data[member_id].shallow_score) / (member_count ** (1 / 3))
+                data[member_id].shallow_score = 0.0
+            elif data[member_id].shallow_score < 0:
+                data[member_id].deep_score += data[member_id].shallow_score
+                data[member_id].shallow_score /= 4.0
+                if data[member_id].shallow_score > -0.01:
+                    data[member_id].shallow_score = 0.0
+            elif data[member_id].deep_score > 0.1:
+                data[member_id].deep_score -= 0.0078125  # 1/28
+
+            # Apply credibility decay
+            data[member_id].credibility = max(0.0, data[member_id].credibility - CREDIBILITY_DECAY)
 
         # Calculate justices
         justices: list[discord.Member] = []
         if len(data.keys()) >= JUSTICE_COUNT * 5:
             justices = sorted(guild.members, key=lambda memb: justice_score(data, memb), reverse=True)[:JUSTICE_COUNT]
-            if data[justices[-1].id]["deep_score"] <= JUSTICE_DEEP_SCORE_REQUIREMENT:
+            if data[justices[-1].id].deep_score <= JUSTICE_DEEP_SCORE_REQUIREMENT:
                 justices = []
 
         log_deletions: list[int] = []
@@ -710,7 +793,6 @@ async def day_change() -> None:
 
             if member is not None:
                 await set_justice_role(member, [j.id for j in justices])
-            data[member_id]["credits"] = compute_credits(data[member_id]["deep_score"])
 
             # Timeout members that are missing required roles
             if member is not None and not member.bot:
@@ -719,18 +801,15 @@ async def day_change() -> None:
                     try:
                         was_timed_out: bool = member.timed_out_until is not None and member.timed_out_until > discord.utils.utcnow()
                         await member.timeout(MISSING_ROLE_TIMEOUT_DURATION, reason="Missing required roles.")
-                        if "suspended_timeout" not in data[member_id]:
-                            data[member_id]["suspended_timeout"] = 0.0 if not was_timed_out else max(0.0, (member.timed_out_until - discord.utils.utcnow()).total_seconds())
+                        if data[member_id].suspended_timeout is not None:
+                            data[member_id].suspended_timeout = 0.0 if not was_timed_out else max(0.0, (
+                                    member.timed_out_until - discord.utils.utcnow()).total_seconds())
                             await dm_member(member, MISSING_ROLE_MESSAGE(was_timed_out))
                             logger.info(f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
                         else:
                             log_deletions.append(member_id)
                     except discord.errors.Forbidden:
                         logger.error(f"Forbidden to timeout user \"{member.display_name}\" (id={member_id}) for missing required roles.")
-        # If less than 10% of members have any credits, give everyone exactly 0.1 credits
-        if sum(1 for member_id in data if data[member_id]["credits"] > 0.0) < 0.1 * len(data):
-            for member_id in data:
-                data[member_id]["credits"] = 0.1
 
         save_data(data)
     logger.info("Data update complete.")
@@ -739,7 +818,6 @@ async def day_change() -> None:
     message_content: str = ""
     i: int
     for i, justice_member in enumerate(justices):
-        data[justice_member.id]["credits"] += (JUSTICE_COUNT - i) * 0.5
         message_content += f"{i + 1}. {justice_member.mention}\n"
     if not message_content:
         message_content = "No justices have been determined yet."
@@ -783,7 +861,6 @@ async def day_change() -> None:
         logger.info(f"Deleted {len(deleted)} role timeout prolongation logs from the logger channel.")
     logger.info("Full day change complete.")
 
-
 # When a user updates their roles, check if they have the required roles
 @bot.event
 async def on_member_update(before: discord.Member, after: discord.Member):
@@ -801,10 +878,11 @@ async def on_member_update(before: discord.Member, after: discord.Member):
             data: DataType = await load_data()
             if not after.id in data:
                 await on_member_join(after)
-            if "suspended_timeout" in data[after.id]:
+            if data[after.id].suspended_timeout is not None:
                 try:
-                    if data[after.id]["suspended_timeout"] > 0.0:
-                        await after.timeout(datetime.timedelta(seconds=data[after.id]["suspended_timeout"]), reason="Resume timeout from before role-acquisition obligation.")
+                    if data[after.id].suspended_timeout > 0.0:
+                        await after.timeout(datetime.timedelta(seconds=data[after.id].suspended_timeout),
+                                            reason="Resume timeout from before role-acquisition obligation.")
                     else:
                         await after.timeout(None, reason="Acquired necessary roles.")
                 except discord.errors.Forbidden:
@@ -812,11 +890,13 @@ async def on_member_update(before: discord.Member, after: discord.Member):
                     return
                 logger.info(f"{after.display_name} (id={after.id}) has been untimed out due to acquiring the necessary roles.")
                 if after.timed_out_until is not None and (after.timed_out_until - discord.utils.utcnow()) > TIMEOUT_NOTIFICATION_THRESHOLD:
-                    logger.info(f"{after.display_name} (id={after.id}) still has a respect timeout of {data[after.id]['suspended_timeout'] / 60.0} minutes to serve.")
-                    await dm_member(after, f"Your role timeout has been removed, but you still have a timeout of {data[after.id]['suspended_timeout'] / 60.0} minutes to serve.")
+                    logger.info(
+                        f"{after.display_name} (id={after.id}) still has a respect timeout of {data[after.id].suspended_timeout / 60.0} minutes to serve.")
+                    await dm_member(after,
+                                    f"Your role timeout has been removed, but you still have a timeout of {data[after.id].suspended_timeout / 60.0} minutes to serve.")
                 else:
                     await dm_member(after, ROLE_RESTORATION_MESSAGE)
-                del data[after.id]["suspended_timeout"]
+                del data[after.id].suspended_timeout
                 save_data(data)
 
 
