@@ -13,16 +13,14 @@ Generating Discord OAuth2 Link:
 """
 import asyncio
 import datetime
+import fractions
 import json
 import logging
 import math
 import os
 import shutil
 import signal
-import sys
 import time
-import traceback
-from decimal import Decimal
 from types import FrameType
 from typing import Callable
 
@@ -74,6 +72,7 @@ CREDIBILITY_DECAY: int = 10  # Seconds-worth of credibility lost per day
 CREDIBILITY_EARNING_EXCLUSION_CHANNELS: list[int] = [1201374063810064484, 1217615412146077806, 1263269073538515005,
                                                      1217278514298884176]
 
+
 # Record start time
 start_time: float = time.time()
 
@@ -83,61 +82,53 @@ load_dotenv()
 # Load the token from an environment variable
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 
-# Initialize the bot with the necessary intents
+# ===================================================GLOBAL VARIABLES===================================================
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 intents.guilds = True
 bot = commands.Bot(command_prefix='', intents=intents)
-
-# Path to the data file
-data_file: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data.json"))
-
+data_file_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data.json"))
 # Configure logging, excluding discord logs
 logger = logging.getLogger('kams-bot')
 logger.setLevel(logging.INFO)
-
 # Create handlers
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
-
 # Create formatters and add it to handlers
 formatter = logging.Formatter(LOGGING_FORMAT)
 console_handler.setFormatter(formatter)
-
-# Add handlers to the logger
 logger.addHandler(console_handler)
-
+guild_object: discord.Guild | None = None
+is_initialized = False
 # Extract x and y coordinates from the dictionary
 x_coords: np.ndarray = np.array(list(TIMEOUT_DURATION_OUTLINE.keys()))
 y_coords: np.ndarray = np.array(list(TIMEOUT_DURATION_OUTLINE.values()))
-
 # Create a linear interpolation function
 linear_interp = interp1d(x_coords, y_coords, fill_value='extrapolate')  # linear interpolation
+# Generate points to plot the function
+x_values: np.ndarray = np.linspace(min(x_coords), max(x_coords), 500)
+y_values: np.ndarray = linear_interp(x_values)
 
 
+# ===================================================UTILITY FUNCTIONS==================================================
 # Function to evaluate the linear interpolation at any given x
-def calculate_timeout(x: float) -> float:
+def calculate_timeout(x: fractions.Fraction) -> float:
     """
     Calculate the timeout duration based on the shallow score.
     :param x:
     :return:
     """
-    return float(linear_interp(x))
-
-
-# Generate points to plot the function
-x_values: np.ndarray = np.linspace(min(x_coords), max(x_coords), 500)
-y_values: np.ndarray = linear_interp(x_values)
-
+    return float(linear_interp(float(x)))
 
 class MemberEntry:
     """
     Class to represent a member entry in the data file.
     """
 
-    def __init__(self, shallow_score: float = 0.0, deep_score: float = 0.0, credibility: float = 0.0,
-                 opinions: dict[int, float] | None = None,
+    def __init__(self, shallow_score: fractions.Fraction = 0.0, deep_score: fractions.Fraction = 0.0,
+                 credibility: fractions.Fraction = 0.0,
+                 opinions: dict[int, fractions.Fraction] | None = None,
                  latest_message_time: float = discord.utils.DISCORD_EPOCH / 1000,
                  conversation_start_time: float = discord.utils.DISCORD_EPOCH / 1000,
                  suspended_timeout: float | None = None) -> None:
@@ -204,14 +195,14 @@ async def load_data() -> DataType:
     Load data from the JSON file.
     :return:
     """
-    if os.path.exists(data_file):
-        with open(data_file) as file:
+    if os.path.exists(data_file_path):
+        with open(data_file_path) as file:
             return {int(key): MemberEntry.from_dict(value) for key, value in json.load(file).items()}
     return {}
 
 
 # Helper function to save data to JSON file
-def save_data(data: DataType, output_file: str = data_file) -> None:
+def save_data(data: DataType, output_file: str = data_file_path) -> None:
     """
     Save data to the JSON file.
     :param output_file:
@@ -221,7 +212,7 @@ def save_data(data: DataType, output_file: str = data_file) -> None:
         json.dump({str(key): value.to_dict() for key, value in data.items()}, file, indent=2)
 
 
-async def set_respect_role(guild: discord.Guild, member: discord.Member, score: float) -> None:
+async def set_respect_role(guild: discord.Guild, member: discord.Member, score: fractions.Fraction) -> None:
     """
     Set the respect role based on the score.
     :param guild:
@@ -508,142 +499,6 @@ def save_ban_requests(ban_requests: BanRequestsType) -> None:
                    ban_requests.items()}, file, indent=2)
 
 
-@bot.tree.command(name="justice_toolbox", description="Access the Justice Toolbox.")
-async def slash_justice_toolbox(interaction: discord.Interaction) -> None:
-    """
-    Access the Justice Toolbox.
-    :param interaction:
-    """
-    justice_role: discord.Role | None = discord.utils.get(interaction.guild.roles, name=JUSTICE_ROLE_NAME)
-    if justice_role is None:
-        logger.error("The 'Justice' role does not exist in the guild. Error accessing it for the Justice Toolbox.")
-        return
-    if justice_role not in interaction.user.roles:
-        # noinspection PyUnresolvedReferences
-        await interaction.response.send_message("You must be a Justice to access the Justice Toolbox.", ephemeral=True)
-        return
-    # noinspection PyUnresolvedReferences
-    await interaction.response.send_message("Justice Toolbox", view=JusticeToolboxView(), ephemeral=True)
-
-
-@bot.tree.command(name="my_opinions", description="View your opinions, constructed from your votes.")
-async def my_opinions(interaction: discord.Interaction) -> None:
-    """
-    Output a table of percentages, adding to <= 1
-    """
-    output = ""
-    async with data_lock:
-        data: DataType = await load_data()
-        if interaction.user.id not in data:
-            await on_member_join(interaction.user)
-
-        if len(data[interaction.user.id].opinions) == 0:
-            # noinspection PyUnresolvedReferences
-            await interaction.response.send_message("You have not voted on anyone yet.", ephemeral=True)
-            return
-        for target_id, severity in data[interaction.user.id].opinions.items():
-            target: discord.User = await bot.fetch_user(target_id)
-            output += f"**{target.display_name}**: {severity}\n"
-    # noinspection PyUnresolvedReferences
-    await interaction.response.send_message(output, ephemeral=True)
-
-
-@bot.tree.command(name="vote",
-                  description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.")
-@commands.guild_only()
-async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float, reason: str,
-                     hidden: bool) -> None:
-    """
-    Vote for a user with a severity ranging from -1 to 1.
-    :param hidden:
-    :param reason:
-    :param interaction:
-    :param target:
-    :param severity:
-    :return:
-    """
-
-    if severity == 0.0:
-        # noinspection PyUnresolvedReferences
-        await interaction.response.send_message("You cannot vote with a severity of 0.", ephemeral=True)
-        return
-    async with data_lock:
-        data: DataType = await load_data()
-        if interaction.user.id not in data:
-            await on_member_join(interaction.user)
-        target_member: discord.Member | None = interaction.guild.get_member(target.id)
-        if target.id not in data and target_member is not None:
-            await on_member_join(target_member)
-        if -1.0 > severity or severity > 1.0:
-            # noinspection PyUnresolvedReferences
-            await interaction.response.send_message("Invalid severity value. Please use a value between -1 and 1.",
-                                                    ephemeral=True)
-            logger.info(
-                f"Invalid severity value for {interaction.user.display_name} to vote for {target.display_name} with severity {severity}.")
-            return
-        data[interaction.user.id].opinions[target.id] = (
-                data[interaction.user.id].opinions[target.id] + severity) if target.id in data[
-            interaction.user.id].opinions else severity
-
-        # And adjust the rest of the user's opinions to make sure their absolute sum is less than or equal to 1
-        adjust_factor: float = 1.0 / max(1.0, sum(abs(value) for value in data[interaction.user.id].opinions.values()))
-        severity *= adjust_factor
-        for key in data[interaction.user.id].opinions:
-            data[interaction.user.id].opinions[key] *= adjust_factor
-        assert sum(map(abs, data[interaction.user.id].opinions.values())) <= 1.0
-
-        data[target.id].shallow_score = float(
-            Decimal(str(data[target.id].shallow_score)) + Decimal(str(severity)) * max(
-                Decimal(str(data[interaction.user.id].credibility)), Decimal("0.0")))
-        if target_member is not None:
-            await set_respect_role(interaction.guild, target_member,
-                                   data[target.id].shallow_score + data[target.id].deep_score)
-            if data[target.id].shallow_score < (TIMEOUT_THRESHOLD + 1.0):
-                # Timeout procedure
-                timeout_minutes = calculate_timeout(
-                    data[target.id].shallow_score + min(data[target.id].deep_score, 0.5))
-                old_duration: datetime.timedelta = datetime.timedelta()
-                if target_member.timed_out_until is not None and (
-                        target_member.timed_out_until - discord.utils.utcnow()) > old_duration:
-                    old_duration = target_member.timed_out_until - discord.utils.utcnow()
-                new_duration: datetime.timedelta = datetime.timedelta(minutes=timeout_minutes)
-                if (severity < 0 or new_duration < old_duration) and new_duration != old_duration:
-                    until: datetime.datetime = discord.utils.utcnow() + new_duration
-                    if data[target_member.id].suspended_timeout is not None:
-                        data[target_member.id].suspended_timeout = new_duration.total_seconds()
-                    else:
-                        try:
-                            await target_member.edit(timed_out_until=until, reason=f"Voted {severity} by a member.")
-                            logger.info(
-                                f"{target_member.display_name} has been timed out for {timeout_minutes} minutes.")
-                            if old_duration < TIMEOUT_NOTIFICATION_THRESHOLD < new_duration:
-                                await dm_member(target_member,
-                                                f"You have been timed out for {timeout_minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out "
-                                                f"to a "
-                                                f"moderator.")
-                        except discord.errors.Forbidden:
-                            logger.error(
-                                f"Forbidden to timeout user \"{target_member.display_name}\" (id={target_member.id}).")
-
-        save_data(data)
-
-        if not hidden:
-            # Send a message publicly
-            public_message: str = f"{interaction.user.mention} has {'up' if severity > 0 else 'down'}voted {target.mention} with severity {severity}. Reason: {reason}"  # If changing this line, also update on_message.
-            await interaction.channel.send(public_message)
-        try:
-            # noinspection PyUnresolvedReferences
-            await interaction.response.send_message(
-                f"Vote successful! Your opinion on {target.display_name} is now {data[interaction.user.id].opinions[target.id]}",
-                ephemeral=True, delete_after=15)
-        except discord.errors.NotFound:
-            logger.error(
-                f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long. Proceeding to send a DM.")
-            await dm_member(interaction.user,
-                            f"With apologies for the delay, your vote for {target.display_name} with severity {severity} has been successfully processed. Your opinion on {target.display_name} is now "
-                            f"{data[interaction.user.id].opinions[target.id]}.")
-
-
 async def dm_member(member: discord.Member, message: str) -> None:
     """
     Send a direct message to a member, creating a DM channel if necessary.
@@ -694,9 +549,6 @@ async def get_messages_from_channel(
                 await get_messages_from_channel(subchannel, after, output)
 
 
-is_initialized = False
-
-
 @bot.event
 async def on_ready() -> None:
     """
@@ -706,24 +558,168 @@ async def on_ready() -> None:
     global is_initialized
     if is_initialized:
         return
-    async with data_lock:
-        logger.info("Bot is ready, starting to sync commands...")
-        guild: discord.Guild | None = bot.get_guild(GUILD_ID)
-        if guild is None:
-            logger.error("Could not find provided guild.")
+
+    global guild_object
+    # Get the guild object
+    guild_object = bot.get_guild(GUILD_ID)
+    if guild_object is None:
+        logger.error("Could not find provided guild.")
+        exit(1)
+
+    @bot.tree.command(name="justice_toolbox", description="Access the Justice Toolbox.", guild=guild_object)
+    async def slash_justice_toolbox(interaction: discord.Interaction) -> None:
+        """
+        Access the Justice Toolbox.
+        :param interaction:
+        """
+        justice_role: discord.Role | None = discord.utils.get(interaction.guild.roles, name=JUSTICE_ROLE_NAME)
+        if justice_role is None:
+            logger.error("The 'Justice' role does not exist in the guild. Error accessing it for the Justice Toolbox.")
             return
-        await bot.tree.sync()
+        if justice_role not in interaction.user.roles:
+            # noinspection PyUnresolvedReferences
+            await interaction.response.send_message("You must be a Justice to access the Justice Toolbox.",
+                                                    ephemeral=True)
+            return
+        # noinspection PyUnresolvedReferences
+        await interaction.response.send_message("Justice Toolbox", view=JusticeToolboxView(), ephemeral=True)
+
+    @bot.tree.command(name="my_opinions", description="View your opinions, constructed from your votes.",
+                      guild=guild_object)
+    async def slash_my_opinions(interaction: discord.Interaction) -> None:
+        """
+        Output a table of percentages, adding to <= 1
+        """
+        output = ""
+        async with data_lock:
+            data: DataType = await load_data()
+            if interaction.user.id not in data:
+                await on_member_join(interaction.user)
+
+            if len(data[interaction.user.id].opinions) == 0:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.send_message("You have not voted on anyone yet.", ephemeral=True)
+                return
+            for target_id, severity in data[interaction.user.id].opinions.items():
+                target: discord.User = await bot.fetch_user(target_id)
+                output += f"**{target.display_name}**: {severity}\n"
+        # noinspection PyUnresolvedReferences
+        await interaction.response.send_message(output, ephemeral=True)
+
+    @bot.tree.command(name="vote",
+                      description="Vote for a user with a severity ranging from -1 to 1. See The Rules for more information.",
+                      guild=guild_object)
+    async def slash_vote(interaction: discord.Interaction, target: discord.User, severity: float, reason: str,
+                         hidden: bool) -> None:
+        """
+        Vote for a user with a severity ranging from -1 to 1.
+        :param hidden:
+        :param reason:
+        :param interaction:
+        :param target:
+        :param severity:
+        :return:
+        """
+        fraction_severity: fractions.Fraction = fractions.Fraction(severity)
+        print(fraction_severity)
+        if fraction_severity == 0.0:
+            # noinspection PyUnresolvedReferences
+            await interaction.response.send_message("You cannot vote with a severity of 0.", ephemeral=True)
+            return
+        async with data_lock:
+            data: DataType = await load_data()
+            if interaction.user.id not in data:
+                await on_member_join(interaction.user)
+            target_member: discord.Member | None = interaction.guild.get_member(target.id)
+            if target.id not in data and target_member is not None:
+                await on_member_join(target_member)
+            if -1.0 > fraction_severity or fraction_severity > 1.0:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.send_message("Invalid severity value. Please use a value between -1 and 1.",
+                                                        ephemeral=True)
+                logger.info(
+                    f"Invalid severity value for {interaction.user.display_name} to vote for {target.display_name} with severity {fraction_severity}.")
+                return
+            data[interaction.user.id].opinions[target.id] = (
+                    data[interaction.user.id].opinions[target.id] + fraction_severity) if target.id in data[
+                interaction.user.id].opinions else fraction_severity
+
+            # And adjust the rest of the user's opinions to make sure their absolute sum is less than or equal to 1
+            adjust_factor: fractions.Fraction = fractions.Fraction(1, max(1, sum(
+                abs(value) for value in data[interaction.user.id].opinions.values())))
+            fraction_severity *= adjust_factor
+            for key in data[interaction.user.id].opinions:
+                data[interaction.user.id].opinions[key] *= adjust_factor
+            assert sum(map(abs, data[interaction.user.id].opinions.values())) <= 1.0
+
+            data[target.id].shallow_score = data[target.id].shallow_score + fraction_severity * max(
+                data[interaction.user.id].credibility, fractions.Fraction(1, 100))
+            if target_member is not None:
+                await set_respect_role(interaction.guild, target_member,
+                                       data[target.id].shallow_score + data[target.id].deep_score)
+                if data[target.id].shallow_score < (TIMEOUT_THRESHOLD + 1.0):
+                    # Timeout procedure
+                    timeout_minutes = calculate_timeout(
+                        data[target.id].shallow_score + min(data[target.id].deep_score, fractions.Fraction(1, 2)))
+                    old_duration: datetime.timedelta = datetime.timedelta()
+                    if target_member.timed_out_until is not None and (
+                            target_member.timed_out_until - discord.utils.utcnow()) > old_duration:
+                        old_duration = target_member.timed_out_until - discord.utils.utcnow()
+                    new_duration: datetime.timedelta = datetime.timedelta(minutes=timeout_minutes)
+                    if (fraction_severity < 0 or new_duration < old_duration) and new_duration != old_duration:
+                        until: datetime.datetime = discord.utils.utcnow() + new_duration
+                        if data[target_member.id].suspended_timeout is not None:
+                            data[target_member.id].suspended_timeout = new_duration.total_seconds()
+                        else:
+                            try:
+                                await target_member.edit(timed_out_until=until,
+                                                         reason=f"Voted {fraction_severity} by a member.")
+                                logger.info(
+                                    f"{target_member.display_name} has been timed out for {timeout_minutes} minutes.")
+                                if old_duration < TIMEOUT_NOTIFICATION_THRESHOLD < new_duration:
+                                    await dm_member(target_member,
+                                                    f"You have been timed out for {timeout_minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out "
+                                                    f"to a "
+                                                    f"moderator.")
+                            except discord.errors.Forbidden:
+                                logger.error(
+                                    f"Forbidden to timeout user \"{target_member.display_name}\" (id={target_member.id}).")
+
+            save_data(data)
+
+            if not hidden:
+                # Send a message publicly
+                public_message: str = f"{interaction.user.mention} has {'up' if fraction_severity > 0 else 'down'}voted {target.mention} with severity {fraction_severity}. Reason: {reason}"  # If changing this line, also update on_message.
+                await interaction.channel.send(public_message)
+            try:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.send_message(
+                    f"Vote successful! Your opinion on {target.display_name} is now {data[interaction.user.id].opinions[target.id]}",
+                    ephemeral=True, delete_after=15)
+            except discord.errors.NotFound:
+                logger.error(
+                    f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long. Proceeding to send a DM.")
+                await dm_member(interaction.user,
+                                f"With apologies for the delay, your vote for {target.display_name} with severity {fraction_severity} has been successfully processed. Your opinion on {target.display_name} is now "
+                                f"{data[interaction.user.id].opinions[target.id]}.")
+
+    async with (data_lock):
+        logger.info("Bot is ready, starting to sync commands...")
+        commands_synced: list[discord.app_commands.AppCommand] = await bot.tree.sync(guild=guild_object)
+        assert not bot.tree.get_commands()
+        assert len(commands_synced) == len(bot.tree.get_commands(guild=guild_object))
         logger.info("Slash commands synced!")
         day_change.start()
         logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
         logger.info("Catching up on missed messages...")
         # Load the data
-        data: DataType = await load_data()
+        data_records: DataType = await load_data()
         # Get all the missed messages
         missed_messages: list[discord.Message] = []
         after_time: datetime.datetime = datetime.datetime.fromtimestamp(
-            max(entry.latest_message_time for entry in data.values()) if data else discord.utils.DISCORD_EPOCH / 1000)
-        for channel in guild.channels:
+            max(entry.latest_message_time for entry in
+                data_records.values()) if data_records else discord.utils.DISCORD_EPOCH / 1000)
+        for channel in guild_object.channels:
             if channel not in CREDIBILITY_EARNING_EXCLUSION_CHANNELS:
                 channel_messages = []
                 await get_messages_from_channel(channel, after_time, channel_messages)
@@ -816,9 +812,9 @@ async def set_justice_role(member: discord.Member, justice_ids: list[int]) -> No
         await member.remove_roles(justice_role)
 
 
-def justice_score(data: DataType, member: discord.Member) -> tuple[float, datetime.datetime]:
+def justice_score(data: DataType, member: discord.Member) -> tuple[fractions.Fraction, datetime.datetime]:
     """
-    Calculate the justice score of a member.
+    Calculate the justice score of a member. Used for sorting justices.
     :param data:
     :param member:
     :return:
@@ -881,7 +877,7 @@ async def day_change() -> None:
                 data[member_id].deep_score -= 0.0078125  # 1/28
 
             # Apply credibility decay
-            data[member_id].credibility = max(0.0, data[member_id].credibility - CREDIBILITY_DECAY)
+            data[member_id].credibility = max(fractions.Fraction(0), data[member_id].credibility - CREDIBILITY_DECAY)
 
         # Calculate justices
         justices: list[discord.Member] = []
