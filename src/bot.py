@@ -128,8 +128,9 @@ class MemberEntry:
     Class to represent a member entry in the data file.
     """
 
-    def __init__(self, shallow_score: fractions.Fraction = 0.0, deep_score: fractions.Fraction = 0.0,
-                 credibility: fractions.Fraction = 0.0,
+    def __init__(self, shallow_score: fractions.Fraction = fractions.Fraction(0),
+                 deep_score: fractions.Fraction = fractions.Fraction(0),
+                 credibility: fractions.Fraction = fractions.Fraction(0),
                  opinions: dict[int, fractions.Fraction] | None = None,
                  latest_message_time: float = discord.utils.DISCORD_EPOCH / 1000,
                  conversation_start_time: float = discord.utils.DISCORD_EPOCH / 1000,
@@ -144,6 +145,12 @@ class MemberEntry:
         :param latest_message_time: 
         :param conversation_start_time: 
         :param suspended_timeout: 
+        :param deep_score:
+        :param credibility:
+        :param opinions:
+        :param latest_message_time:
+        :param conversation_start_time:
+        :param suspended_timeout:
         """
         self.shallow_score = shallow_score
         self.deep_score = deep_score
@@ -159,14 +166,17 @@ class MemberEntry:
         Create a MemberEntry from a dictionary.
 
         :param data:
-        :return: 
+        :return:
         """
-        # Convert opinion keys back from strings to integers
-        if "opinions" in data:
-            data["opinions"] = {int(k): v for k, v in data["opinions"].items()}
-
-        # If the key does not exist, do not provide the argument
-        return cls(**{key: data[key] for key in data if key in cls.__init__.__code__.co_varnames})
+        return cls(
+            shallow_score=fractions.Fraction(data.get("shallow_score", "0")),
+            deep_score=fractions.Fraction(data.get("deep_score", "0")),
+            credibility=fractions.Fraction(data.get("credibility", "0")),
+            opinions={int(k): fractions.Fraction(v) for k, v in data.get("opinions", {}).items()},
+            latest_message_time=data.get("latest_message_time", discord.utils.DISCORD_EPOCH / 1000),
+            conversation_start_time=data.get("conversation_start_time", discord.utils.DISCORD_EPOCH / 1000),
+            suspended_timeout=data.get("suspended_timeout")
+        )
 
     def to_dict(self) -> dict:
         """
@@ -174,44 +184,51 @@ class MemberEntry:
 
         :return:
         """
-        # Convert opinion keys from integers to strings
         return {
-            "shallow_score": self.shallow_score,
-            "deep_score": self.deep_score,
-            "credibility": self.credibility,
-            "opinions": {str(k): v for k, v in self.opinions.items()},
+            "shallow_score": str(self.shallow_score),
+            "deep_score": str(self.deep_score),
+            "credibility": str(self.credibility),
+            "opinions": {str(k): str(v) for k, v in self.opinions.items()},
             "latest_message_time": self.latest_message_time,
             "conversation_start_time": self.conversation_start_time,
             "suspended_timeout": self.suspended_timeout
         }
 
 
+# Define the type for the data structure
 DataType = dict[int, MemberEntry]
 
-# VARIABLE INITIALIZATION
+# Initialize a lock for thread-safe file access
 data_lock = asyncio.Lock()
 
 
 async def load_data() -> DataType:
     """
-    Load data from the JSON file.
-    :return:
+    Load data from the JSON file asynchronously.
+    :return: The data dictionary.
     """
-    if os.path.exists(data_file_path):
-        with open(data_file_path) as file:
-            return {int(key): MemberEntry.from_dict(value) for key, value in json.load(file).items()}
-    return {}
+    async with data_lock:
+        if os.path.exists(data_file_path):
+            try:
+                with open(data_file_path, "r", encoding="utf-8") as file:
+                    return {int(key): MemberEntry.from_dict(value) for key, value in json.load(file).items()}
+            except (IOError, json.JSONDecodeError) as e:
+                print(f"Error loading data: {e}")
+        return {}
 
 
-# Helper function to save data to JSON file
-def save_data(data: DataType, output_file: str = data_file_path) -> None:
+async def save_data(data: DataType, output_file: str = data_file_path) -> None:
     """
-    Save data to the JSON file.
-    :param output_file:
-    :param data:
+    Save data to the JSON file asynchronously.
+    :param data: The data dictionary to save.
+    :param output_file: Path to the output JSON file.
     """
-    with open(output_file, "w", encoding="utf-8") as file:
-        json.dump({str(key): value.to_dict() for key, value in data.items()}, file, indent=2)
+    async with data_lock:
+        try:
+            with open(output_file, "w", encoding="utf-8") as file:
+                json.dump({str(key): value.to_dict() for key, value in data.items()}, file, indent=2)
+        except IOError as e:
+            print(f"Error saving data: {e}")
 
 
 async def set_respect_role(guild: discord.Guild, member: discord.Member, score: fractions.Fraction) -> None:
@@ -276,7 +293,7 @@ async def on_message(message: discord.Message) -> None:
             data[author_id].conversation_start_time = message_timestamp
 
         data[author_id].latest_message_time = message_timestamp
-        save_data(data)
+        await save_data(data)
 
 
 class JusticeToolboxView(discord.ui.View):
@@ -687,7 +704,7 @@ async def on_ready() -> None:
                                 logger.error(
                                     f"Forbidden to timeout user \"{target_member.display_name}\" (id={target_member.id}).")
 
-            save_data(data)
+            await save_data(data)
 
             if not hidden:
                 # Send a message publicly
@@ -785,7 +802,7 @@ async def on_member_join(member: discord.Member, data: DataType | None = None) -
         message_sent = True
 
         data[member.id] = MemberEntry()
-        save_data(data)
+        await save_data(data)
     else:
         await set_justice_role(member, await get_justice_ids(member.guild))
 
@@ -853,7 +870,7 @@ async def day_change() -> None:
         backup_file_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data_backup"))
         if not os.path.exists(backup_file_path):
             os.makedirs(backup_file_path)
-        save_data(data,
+        await save_data(data,
                   backup_file_path + f"/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json")  # Backup data
 
         guild: discord.Guild | None = bot.get_guild(GUILD_ID)
@@ -914,7 +931,7 @@ async def day_change() -> None:
                         logger.error(
                             f"Forbidden to timeout user \"{member.display_name}\" (id={member_id}) for missing required roles.")
 
-        save_data(data)
+        await save_data(data)
     logger.info("Data update complete.")
 
     # Make a leaderboard of the five justices
@@ -1014,8 +1031,8 @@ async def on_member_update(before: discord.Member, after: discord.Member):
                                     f"Your role timeout has been removed, but you still have a timeout of {data[after.id].suspended_timeout / 60.0} minutes to serve.")
                 else:
                     await dm_member(after, ROLE_RESTORATION_MESSAGE)
-                del data[after.id].suspended_timeout
-                save_data(data)
+                data[after.id].suspended_timeout = None
+                await save_data(data)
 
 
 async def shutdown() -> None:
