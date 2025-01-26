@@ -202,14 +202,13 @@ async def load_data() -> DataType:
     Load data from the JSON file asynchronously.
     :return: The data dictionary.
     """
-    async with data_lock:
-        if os.path.exists(data_file_path):
-            try:
-                with open(data_file_path, "r", encoding="utf-8") as file:
-                    return {int(key): MemberEntry.from_dict(value) for key, value in json.load(file).items()}
-            except (IOError, json.JSONDecodeError) as e:
-                print(f"Error loading data: {e}")
-        return {}
+    if os.path.exists(data_file_path):
+        try:
+            with open(data_file_path, "r", encoding="utf-8") as file:
+                return {int(key): MemberEntry.from_dict(value) for key, value in json.load(file).items()}
+        except (IOError, json.JSONDecodeError) as e:
+            print(f"Error loading data: {e}")
+    return {}
 
 
 async def save_data(data: DataType, output_file: str = data_file_path) -> None:
@@ -218,12 +217,11 @@ async def save_data(data: DataType, output_file: str = data_file_path) -> None:
     :param data: The data dictionary to save.
     :param output_file: Path to the output JSON file.
     """
-    async with data_lock:
-        try:
-            with open(output_file, "w", encoding="utf-8") as file:
-                json.dump({str(key): value.to_dict() for key, value in data.items()}, file, indent=2)
-        except IOError as e:
-            print(f"Error saving data: {e}")
+    try:
+        with open(output_file, "w", encoding="utf-8") as file:
+            json.dump({str(key): value.to_dict() for key, value in data.items()}, file, indent=2)
+    except IOError as e:
+        print(f"Error saving data: {e}")
 
 
 async def set_respect_role(guild: discord.Guild, member: discord.Member, score: fractions.Fraction) -> None:
@@ -533,39 +531,41 @@ async def dm_member(member: discord.Member, message: str) -> None:
 
 async def get_messages_from_channel(
         channel: discord.TextChannel | discord.VoiceChannel | discord.ForumChannel | discord.CategoryChannel,
-        after: datetime.datetime, output: list[discord.Message]):
+        after: datetime.datetime, output: list[discord.Message]) -> bool:
     """
     Helper function to process messages from different channel types.
 
     :param channel: The channel to process (could be TextChannel, VoiceChannel, or ForumChannel).
     :param after: The timestamp to start retrieving messages from.
     :param output: The list to store messages.
+    :return: True if the function completed successfully, False if the function was interrupted.
     """
+
+    async def process_messages(channel) -> bool:
+        async for message in channel.history(after=after, limit=None):
+            if shutdown_event.is_set():
+                logger.info("Shutdown requested. Aborting message-gathering.")
+                return False  # Exit the function early during shutdown.
+            output.append(message)
+        return True
+
     match channel:
-        case discord.TextChannel():
-            # Process TextChannel messages
-            async for message in channel.history(after=after, limit=None):
-                output.append(message)
-
-            for thread in channel.threads:
-                async for message in thread.history(after=after, limit=None):
-                    output.append(message)
-
-        case discord.VoiceChannel():
-            # Process VoiceChannel messages (no threads)
-            async for message in channel.history(after=after, limit=None):
-                output.append(message)
-
+        case discord.TextChannel() | discord.VoiceChannel():
+            if not await process_messages(channel):
+                return False
+            if isinstance(channel, discord.TextChannel):
+                for thread in channel.threads:
+                    if not await process_messages(thread):
+                        return False
         case discord.ForumChannel():
-            # Process ForumChannel threads
             for thread in channel.threads:
-                async for message in thread.history(after=after, limit=None):
-                    output.append(message)
-
+                if not await process_messages(thread):
+                    return False
         case discord.CategoryChannel():
-            # Process subchannels within CategoryChannel
             for subchannel in channel.channels:
-                await get_messages_from_channel(subchannel, after, output)
+                if not await get_messages_from_channel(subchannel, after, output):
+                    return False
+    return True
 
 
 @bot.event
@@ -741,14 +741,10 @@ async def on_ready() -> None:
         )
 
         for channel in guild_object.channels:
-            if shutdown_event.is_set():
-                logger.info("Shutdown requested. Aborting missed-message gathering.")
-                return  # Exit the function early during shutdown.
-
-            if channel not in CREDIBILITY_EARNING_EXCLUSION_CHANNELS:
-                channel_messages = []
-                await get_messages_from_channel(channel, after_time, channel_messages)
-                missed_messages.extend(channel_messages)
+            if channel.id not in CREDIBILITY_EARNING_EXCLUSION_CHANNELS:
+                if not await get_messages_from_channel(channel, after_time, missed_messages):
+                    logger.info("Exiting `on_ready` function.")
+                    return
     # Sort
     missed_messages.sort(key=lambda msg: msg.created_at)
     for message in missed_messages:
@@ -1064,6 +1060,7 @@ def signal_handler(sig: int, frame: FrameType | None) -> None:
     :param frame:
     """
     logger.info('SIGTERM Received—Shutting Down'.center(shutil.get_terminal_size().columns, '='))
+    shutdown_event.set()
     loop = asyncio.get_event_loop()
     loop.create_task(shutdown())
 
