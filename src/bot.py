@@ -657,6 +657,43 @@ async def dm_member(member: discord.Member, message: str) -> None:
         logger.error(f"Forbidden to send message to \"{member.display_name}\" (id={member.id}).")
 
 
+async def get_messages_from_channel(
+        channel: discord.TextChannel | discord.VoiceChannel | discord.ForumChannel | discord.CategoryChannel,
+        after: datetime.datetime, output: list[discord.Message]):
+    """
+    Helper function to process messages from different channel types.
+
+    :param channel: The channel to process (could be TextChannel, VoiceChannel, or ForumChannel).
+    :param after: The timestamp to start retrieving messages from.
+    :param output: The list to store messages.
+    """
+    match channel:
+        case discord.TextChannel():
+            # Process TextChannel messages
+            async for message in channel.history(after=after, limit=None):
+                output.append(message)
+
+            for thread in channel.threads:
+                async for message in thread.history(after=after, limit=None):
+                    output.append(message)
+
+        case discord.VoiceChannel():
+            # Process VoiceChannel messages (no threads)
+            async for message in channel.history(after=after, limit=None):
+                output.append(message)
+
+        case discord.ForumChannel():
+            # Process ForumChannel threads
+            for thread in channel.threads:
+                async for message in thread.history(after=after, limit=None):
+                    output.append(message)
+
+        case discord.CategoryChannel():
+            # Process subchannels within CategoryChannel
+            for subchannel in channel.channels:
+                await get_messages_from_channel(subchannel, after, output)
+
+
 is_initialized = False
 
 
