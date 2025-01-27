@@ -14,6 +14,7 @@ Generating Discord OAuth2 Link:
 import asyncio
 import datetime
 import fractions
+import heapq
 import json
 import logging
 import math
@@ -24,7 +25,7 @@ import sys
 import time
 import traceback
 from types import FrameType
-from typing import Callable
+from typing import Callable, AsyncGenerator
 
 import discord
 import numpy
@@ -61,7 +62,7 @@ MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
 ROLE_RESTORATION_MESSAGE = "You have been untimed out due to acquiring the necessary roles. Welcome back!"
 LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 MISSING_ROLE_TIMEOUT_DURATION: datetime.timedelta = datetime.timedelta(days=2)
-JUSTICE_DEEP_SCORE_REQUIREMENT: float = 1.5
+JUSTICE_DEEP_SCORE_REQUIREMENT: fractions.Fraction = fractions.Fraction(3, 2)
 DAY_CHANGE_TIME: datetime.time = datetime.time(hour=0, minute=0, second=0)
 JUSTICE_ROLE_NAME = "Justice"
 ERROR_SYMBOL = ":x:"
@@ -69,7 +70,7 @@ SUCCESS_SYMBOL = ":white_check_mark:"
 ELARA_LOGGER_ID: int = 1274076825009655863
 LOGGER_CHANNEL_NAME: str = "logger"
 ROLE_TIMEOUT_REASON: str = "Missing required roles."
-CREDIBILITY_RATIO: float = 2.0e-20  # Credibility earned per second of conversation
+CREDIBILITY_RATIO: fractions.Fraction = fractions.Fraction(1, 2 ** 14)  # Credibility earned per second of conversation
 CREDIBILITY_DECAY: int = 10  # Seconds-worth of credibility lost per day
 CREDIBILITY_EARNING_EXCLUSION_CHANNELS: list[int] = [1201374063810064484, 1217615412146077806, 1263269073538515005,
                                                      1217278514298884176]
@@ -281,8 +282,8 @@ async def on_message(message: discord.Message) -> None:
         # Check if the difference in time is greater than 300 seconds (5 minutes)
         if message_timestamp - data[author_id].latest_message_time > 300:
             # Update credibility based on the time difference and reset conversation start time
-            data[author_id].credibility += (message_timestamp - data[
-                author_id].conversation_start_time) / CREDIBILITY_RATIO
+            data[author_id].credibility += fractions.Fraction(message_timestamp - data[
+                author_id].conversation_start_time) * CREDIBILITY_RATIO
             data[author_id].conversation_start_time = message_timestamp
 
         data[author_id].latest_message_time = message_timestamp
@@ -529,43 +530,90 @@ async def dm_member(member: discord.Member, message: str) -> None:
         logger.error(f"Forbidden to send message to \"{member.display_name}\" (id={member.id}).")
 
 
-async def get_messages_from_channel(
-        channel: discord.TextChannel | discord.VoiceChannel | discord.ForumChannel | discord.CategoryChannel,
-        after: datetime.datetime, output: list[discord.Message]) -> bool:
+async def message_generator(channel, after: datetime.datetime) -> AsyncGenerator[
+    discord.Message, None]:
     """
-    Helper function to process messages from different channel types.
-
-    :param channel: The channel to process (could be TextChannel, VoiceChannel, or ForumChannel).
-    :param after: The timestamp to start retrieving messages from.
-    :param output: The list to store messages.
-    :return: True if the function completed successfully, False if the function was interrupted.
+    Async generator that yields messages from a channel in chronological order.
     """
-
-    async def process_messages(channel) -> bool:
-        async for message in channel.history(after=after, limit=None):
+    try:
+        async for message in channel.history(after=after, oldest_first=True, limit=None):
             if shutdown_event.is_set():
-                logger.info("Shutdown requested. Aborting message-gathering.")
-                return False  # Exit the function early during shutdown.
-            output.append(message)
-        return True
+                logger.info(f"Shutdown requested. Aborting message gathering in {channel.name}.")
+                return
+            yield message
+    except discord.Forbidden:
+        logger.warning(f"No permission to read history in channel {channel.name} ({channel.id})")
+    except discord.HTTPException as e:
+        logger.error(f"Failed to fetch messages from channel {channel.name} ({channel.id}): {e}")
 
-    match channel:
-        case discord.TextChannel() | discord.VoiceChannel():
-            if not await process_messages(channel):
-                return False
-            if isinstance(channel, discord.TextChannel):
-                for thread in channel.threads:
-                    if not await process_messages(thread):
-                        return False
-        case discord.ForumChannel():
+
+def collect_generators(channel: discord.abc.GuildChannel,
+                       after_time: datetime.datetime,
+                       processed: set[int]) -> list[AsyncGenerator[discord.Message, None]]:
+    """
+    Collect async message generators while tracking processed channels
+    """
+    generators = []
+
+    # Skip excluded channels and already processed channels
+    if channel.id in CREDIBILITY_EARNING_EXCLUSION_CHANNELS or channel.id in processed:
+        return generators
+
+    processed.add(channel.id)
+
+    if isinstance(channel, discord.CategoryChannel):
+        # Process category children
+        for subchannel in channel.channels:
+            generators.extend(collect_generators(subchannel, after_time, processed))
+    elif isinstance(channel, (discord.TextChannel, discord.VoiceChannel)):
+        # Process text/voice channel and its threads
+        generators.append(message_generator(channel, after_time))
+        if isinstance(channel, discord.TextChannel):
             for thread in channel.threads:
-                if not await process_messages(thread):
-                    return False
-        case discord.CategoryChannel():
-            for subchannel in channel.channels:
-                if not await get_messages_from_channel(subchannel, after, output):
-                    return False
-    return True
+                if thread.id not in processed:
+                    generators.append(message_generator(thread, after_time))
+                    processed.add(thread.id)
+    elif isinstance(channel, discord.ForumChannel):
+        # Process forum channel threads
+        for thread in channel.threads:
+            if thread.id not in processed:
+                generators.append(message_generator(thread, after_time))
+                processed.add(thread.id)
+
+    return generators
+
+
+async def process_messages_in_order(generators: list[AsyncGenerator[discord.Message, None]]) -> None:
+    """
+    Process messages from multiple generators in chronological order using a priority queue.
+    """
+    heap = []
+    # Initialize heap with first message from each generator
+    for gen in generators:
+        try:
+            msg = await gen.__anext__()
+            heapq.heappush(heap, (msg.created_at.timestamp(), id(gen), gen, msg))
+        except StopAsyncIteration:
+            continue
+        except Exception as e:
+            logger.error(f"Error retrieving message: {e}")
+            continue
+
+    while heap:
+        if shutdown_event.is_set():
+            logger.info("Shutdown requested. Halting missed-message processing.")
+            return
+
+        created_at_ts, gen_id, gen, msg = heapq.heappop(heap)
+        await on_message(msg)
+
+        try:
+            next_msg = await gen.__anext__()
+            heapq.heappush(heap, (next_msg.created_at.timestamp(), id(gen), gen, next_msg))
+        except StopAsyncIteration:
+            pass
+        except Exception as e:
+            logger.error(f"Error retrieving next message: {e}")
 
 
 @bot.event
@@ -573,13 +621,10 @@ async def on_ready() -> None:
     """
     Event that runs when the bot is ready, syncing the commands and starting the day_change loop.
     """
-
-    global is_initialized
+    global is_initialized, guild_object
     if is_initialized:
         return
 
-    global guild_object
-    # Get the guild object
     guild_object = bot.get_guild(GUILD_ID)
     if guild_object is None:
         logger.error("Could not find provided guild.")
@@ -722,7 +767,7 @@ async def on_ready() -> None:
                                 f"With apologies for the delay, your vote for {target.display_name} with severity {fraction_severity} has been successfully processed. Your opinion on {target.display_name} is now "
                                 f"{data[interaction.user.id].opinions[target.id]}.")
 
-    async with (data_lock):
+    async with data_lock:
         logger.info("Bot is ready, starting to sync commands...")
         commands_synced: list[discord.app_commands.AppCommand] = await bot.tree.sync(guild=guild_object)
         assert not bot.tree.get_commands()
@@ -731,32 +776,31 @@ async def on_ready() -> None:
         day_change.start()
         logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
         logger.info("Catching up on missed messages...")
-        # Load the data
-        data_records: DataType = await load_data()
-        # Get all the missed messages
-        missed_messages = []
+
+        data_records = await load_data()
         after_time = datetime.datetime.fromtimestamp(
-            max(entry.latest_message_time for entry in
-                data_records.values()) if data_records else discord.utils.DISCORD_EPOCH / 1000
+            max(entry.latest_message_time for entry in data_records.values())
+            if data_records else discord.utils.DISCORD_EPOCH / 1000
         )
 
-        for channel in guild_object.channels:
-            if channel.id not in CREDIBILITY_EARNING_EXCLUSION_CHANNELS:
-                if not await get_messages_from_channel(channel, after_time, missed_messages):
-                    logger.info("Exiting `on_ready` function.")
-                    return
-    # Sort
-    missed_messages.sort(key=lambda msg: msg.created_at)
-    for message in missed_messages:
-        if shutdown_event.is_set():
-            logger.info("Shutdown requested. Halting missed-message processing.")
-            return  # Exit the function early during shutdown.
-        else:
-            # Process the message
-            await on_message(message)
+    # Collect all message generators with duplicate prevention
+    processed_channels = set()
+    generators = []
+    for channel in guild_object.channels:
+        generators.extend(collect_generators(channel, after_time, processed_channels))
+
+    # Also check for any threads that might not be in channel.threads
+    # (Discord.py sometimes doesn't load all threads immediately)
+    for thread in guild_object.threads:
+        if thread.id not in processed_channels and thread.id not in CREDIBILITY_EARNING_EXCLUSION_CHANNELS:
+            generators.append(message_generator(thread, after_time))
+            processed_channels.add(thread.id)
+
+    # Process messages in order
+    await process_messages_in_order(generators)
+
     is_initialized = True
     logger.info("Initialization complete.")
-
 
 async def get_justice_ids(guild: discord.Guild) -> list[int]:
     """
