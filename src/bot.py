@@ -70,7 +70,7 @@ SUCCESS_SYMBOL = ":white_check_mark:"
 ELARA_LOGGER_ID: int = 1274076825009655863
 LOGGER_CHANNEL_NAME: str = "logger"
 ROLE_TIMEOUT_REASON: str = "Missing required roles."
-CREDIBILITY_RATIO: fractions.Fraction = fractions.Fraction(1, 2 ** 14)  # Credibility earned per second of conversation
+CREDIBILITY_RATIO: fractions.Fraction = fractions.Fraction(1, 2 ** 15)  # Credibility earned per second of conversation
 CREDIBILITY_DECAY: int = 10  # Seconds-worth of credibility lost per day
 CREDIBILITY_EARNING_EXCLUSION_CHANNELS: list[int] = [1201374063810064484, 1217615412146077806, 1263269073538515005,
                                                      1217278514298884176]
@@ -801,6 +801,7 @@ async def on_ready() -> None:
 
     is_initialized = True
     logger.info("Initialization complete.")
+
 
 async def get_justice_ids(guild: discord.Guild) -> list[int]:
     """
