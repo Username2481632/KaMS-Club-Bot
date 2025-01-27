@@ -666,7 +666,7 @@ async def on_ready() -> None:
                 return
             for target_id, severity in data[interaction.user.id].opinions.items():
                 target: discord.User = await bot.fetch_user(target_id)
-                output += f"**{target.display_name}**: {severity}\n"
+                output += f"**{target.display_name}**: {float(severity):.4f}\n"
         # noinspection PyUnresolvedReferences
         await interaction.response.send_message(output, ephemeral=True)
 
