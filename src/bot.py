@@ -987,9 +987,6 @@ async def on_member_join(member: discord.Member, data: FullDataType) -> None:
     :param member:
     :return:
     """
-    # Ensure the member is not a bot
-    if member.bot:
-        return
     message_sent: bool = False
     locked: bool = False
     if data is None:
@@ -997,14 +994,16 @@ async def on_member_join(member: discord.Member, data: FullDataType) -> None:
         await data_lock.acquire()
         locked = True
     if not member.id in data:
-        if GUILDS[member.guild.id].welcome_dm:
+        welcome_dm: str = next(g for g in GUILDS if g.id == member.guild.id).welcome_dm
+        if welcome_dm:
             # DM the member
             sending_message: str = ""
             # If the member joined over 5 minutes ago
             if (discord.utils.utcnow() - member.joined_at).total_seconds() > 300:
                 sending_message += "With apologies for the delay,\n"
-            sending_message += GUILDS[member.guild.id].welcome_dm
-            await dm_member(member, sending_message)
+            sending_message += welcome_dm
+            if member.id != bot.user.id:
+                await dm_member(member, sending_message)
             message_sent = True
 
             data[member.guild.id][member.id] = MemberEntry()
