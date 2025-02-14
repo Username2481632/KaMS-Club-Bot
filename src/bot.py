@@ -993,8 +993,8 @@ async def on_member_join(member: discord.Member, data: FullDataType) -> None:
         data = await load_data()
         await data_lock.acquire()
         locked = True
+    welcome_dm: str = next(g for g in GUILDS if g.id == member.guild.id).welcome_dm
     if member.id not in data[member.guild.id]:
-        welcome_dm: str = next(g for g in GUILDS if g.id == member.guild.id).welcome_dm
         if welcome_dm:
             # DM the member
             sending_message: str = ""
@@ -1016,7 +1016,7 @@ async def on_member_join(member: discord.Member, data: FullDataType) -> None:
     if locked:
         data_lock.release()
     logger.info(
-        f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time) " if not message_sent else ""}and their roles have been set.")
+        f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time) " if not message_sent and welcome_dm else ""}and their roles have been set.")
 
 
 async def set_justice_role(member: discord.Member, justice_ids: list[int]) -> None:
