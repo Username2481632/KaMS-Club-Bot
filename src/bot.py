@@ -296,8 +296,8 @@ async def load_data() -> FullDataType:
     if os.path.exists(data_file_path):
         try:
             with open(data_file_path, "r", encoding="utf-8") as file:
-                return {int(key1): {int(key2): MemberEntry.from_dict(value) for key2, value in json.load(file).items()}
-                        for key1, value in json.load(file).items()}
+                return {int(key1): {int(key2): MemberEntry.from_dict(value) for key2, value in subdict.items()} for
+                        key1, subdict in json.load(file).items()}
         except (IOError, json.JSONDecodeError) as e:
             print(f"Error loading data: {e}")
     return {}
