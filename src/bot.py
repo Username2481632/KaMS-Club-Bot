@@ -759,7 +759,7 @@ async def on_ready() -> None:
         guild_objects.append(guild)
 
     logger.info("Verifying bot nicknames...")
-    for guild in bot.guilds:
+    for guild in guild_objects:
         await update_bot_nickname(guild)
 
     @bot.tree.command(name="justice_toolbox", description="Access the Justice Toolbox.", guilds=guild_objects)
