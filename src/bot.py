@@ -363,12 +363,13 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
 
 
 @bot.event
-async def on_message(message: discord.Message) -> None:
+async def on_message(message: discord.Message, override: bool = False) -> None:
     """
 
+    :param override:
     :param message:
     """
-    if not is_initialized:
+    if not is_initialized and not override or message.guild is None:
         return
     # update the user's [latest_message_time] and [conversation_start_time] in the data file
     author_id: int = message.author.id
@@ -718,7 +719,7 @@ async def process_messages_in_order(generators: list[AsyncGenerator[discord.Mess
             return
 
         created_at_ts, gen_id, gen, msg = heapq.heappop(heap)
-        await on_message(msg)
+        await on_message(msg, True)
 
         try:
             next_msg = await gen.__anext__()
