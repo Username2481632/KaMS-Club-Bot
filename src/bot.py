@@ -739,17 +739,24 @@ async def on_ready() -> None:
         return
 
     # If the config file is blank of if it doesn't contain `guild_ids`, initialize it with all the guilds the bot is in
-    if not os.path.exists(CONFIG_FILE) or not json.load(open(CONFIG_FILE)).get("guilds"):
+    if not os.path.exists(CONFIG_FILE):
         json.dump({"guilds": [GuildConfig(guild.id).to_dict() for guild in bot.guilds]}, open(CONFIG_FILE, "w"),
                   indent=2)
+    else:
+        try:
+            with open(CONFIG_FILE) as config_file:
+                config_data = json.load(config_file)
+        except json.JSONDecodeError:
+            logger.error(f"Invalid configuration file ({CONFIG_FILE}); shutting down.")
+            await shutdown()
+            return
     # noinspection PyGlobalUndefined
     global GUILDS
-    GUILDS = [GuildConfig.from_dict(g) for g in json.load(open(CONFIG_FILE)).get("guilds")]
+    GUILDS = [GuildConfig.from_dict(g) for g in config_data.get("guilds", [])]
     if not GUILDS:
         # Terminate the bot
         logger.error("No guilds configured; shutting down.")
-        await data_lock.acquire()
-        await bot.close()
+        await shutdown()
         return
     for g in GUILDS:
         guild: discord.Guild | None = bot.get_guild(g.id)
