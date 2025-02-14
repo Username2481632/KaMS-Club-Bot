@@ -907,6 +907,8 @@ async def on_ready() -> None:
     async with data_lock:
         logger.info("Bot is ready, starting to sync commands...")
         commands_synced: list[discord.app_commands.AppCommand] = []
+        for guild in guild_objects:
+            commands_synced.extend(await bot.tree.sync(guild=guild))
 
         assert not bot.tree.get_commands()
         assert len(commands_synced) == sum(len(bot.tree.get_commands(guild=g)) for g in guild_objects)
