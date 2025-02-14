@@ -993,7 +993,7 @@ async def on_member_join(member: discord.Member, data: FullDataType) -> None:
         data = await load_data()
         await data_lock.acquire()
         locked = True
-    if not member.id in data:
+    if not member.id in data[member.guild.id]:
         welcome_dm: str = next(g for g in GUILDS if g.id == member.guild.id).welcome_dm
         if welcome_dm:
             # DM the member
