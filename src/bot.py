@@ -926,10 +926,17 @@ async def on_ready() -> None:
         logger.info("Catching up on missed messages...")
 
         dta = await load_data()
+        # Add missing guilds to the data file
+        was_modified: bool = False
+        for g in guild_objects:
+            if g.id not in dta:
+                dta[g.id] = {}
+                was_modified = True
+        if was_modified:
+            await save_data(dta)
         after_time = datetime.datetime.fromtimestamp(
-            max(member_entry.latest_message_time for g in guild_objects for member_entry in dta[g.id].values())
-            if dta else discord.utils.DISCORD_EPOCH / 1000
-        )
+            max([discord.utils.DISCORD_EPOCH / 1000] + [member_entry.latest_message_time for g in guild_objects for
+                                                        member_entry in dta[g.id].values()]))
 
     # Collect all message generators with duplicate prevention
     processed_channels = set()
