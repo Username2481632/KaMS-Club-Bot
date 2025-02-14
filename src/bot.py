@@ -993,7 +993,7 @@ async def on_member_join(member: discord.Member, data: FullDataType) -> None:
         data = await load_data()
         await data_lock.acquire()
         locked = True
-    if not member.id in data[member.guild.id]:
+    if member.id not in data[member.guild.id]:
         welcome_dm: str = next(g for g in GUILDS if g.id == member.guild.id).welcome_dm
         if welcome_dm:
             # DM the member
@@ -1006,8 +1006,8 @@ async def on_member_join(member: discord.Member, data: FullDataType) -> None:
                 await dm_member(member, sending_message)
             message_sent = True
 
-            data[member.guild.id][member.id] = MemberEntry()
-            await save_data(data)
+        data[member.guild.id][member.id] = MemberEntry()
+        await save_data(data)
     else:
         await set_justice_role(member, await get_justice_ids(member.guild))
 
