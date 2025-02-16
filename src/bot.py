@@ -73,6 +73,7 @@ CREDIBILITY_RATIO: fractions.Fraction = fractions.Fraction(1, 2 ** 15)  # Credib
 CREDIBILITY_DECAY: int = 10  # Seconds-worth of credibility lost per day
 CREDIBILITY_EARNING_EXCLUSION_CHANNELS: list[int] = [1201374063810064484, 1217615412146077806, 1263269073538515005,
                                                      1217278514298884176]
+SEVERITY_DISPLAY_PRECISION: int = 4  # Number of decimal places to display for severity
 
 # Record start time
 start_time: float = time.time()
@@ -315,6 +316,23 @@ async def save_data(data: FullDataType, output_file: str = data_file_path) -> No
                        data.items()}, file, indent=2)
     except IOError as e:
         print(f"Error saving data: {e}")
+
+
+def format_severity(severity: fractions.Fraction) -> str:
+    """
+    Format the credibility value for display.
+    :param severity:
+    :return:
+    """
+    min_value: float = 10 ** -SEVERITY_DISPLAY_PRECISION
+    if 0 < severity < min_value:
+        return f"<{min_value}"
+    elif -min_value < severity < 0:
+        return f"-(<{min_value})"
+    elif severity == 0:
+        return "0"
+    else:
+        return str(round(severity, SEVERITY_DISPLAY_PRECISION)).rstrip('0').rstrip('.')
 
 
 async def set_respect_role(guild: discord.Guild, member: discord.Member, score: fractions.Fraction) -> None:
@@ -806,7 +824,7 @@ async def on_ready() -> None:
                 return
             for target_id, severity in data[interaction.guild.id][interaction.user.id].opinions.items():
                 target: discord.User = await bot.fetch_user(target_id)
-                output += f"**{target.display_name}**: {f"{float(severity):.4f}".rstrip('0').rstrip('.')}\n"
+                output += f"**{target.display_name}**: {format_severity(severity)}\n"
         # noinspection PyUnresolvedReferences
         await interaction.response.send_message(output, ephemeral=True)
 
@@ -825,8 +843,7 @@ async def on_ready() -> None:
         :return:
         """
         fraction_severity: fractions.Fraction = fractions.Fraction(severity)
-        print(fraction_severity)
-        if fraction_severity == 0.0:
+        if fraction_severity == 0:
             # noinspection PyUnresolvedReferences
             await interaction.response.send_message("You cannot vote with a severity of 0.", ephemeral=True)
             return
@@ -835,9 +852,10 @@ async def on_ready() -> None:
             if interaction.user.id not in data[interaction.guild.id]:
                 await on_member_join(interaction.user, data)
             target_member: discord.Member | None = interaction.guild.get_member(target.id)
+            # If the target is not in the server, still process the vote but just don't take immediate action
             if target.id not in data[interaction.guild.id] and target_member is not None:
                 await on_member_join(target_member, data)
-            if -1.0 > fraction_severity or fraction_severity > 1.0:
+            if fraction_severity < -1 or fraction_severity > 1:
                 # noinspection PyUnresolvedReferences
                 await interaction.response.send_message("Invalid severity value. Please use a value between -1 and 1.",
                                                         ephemeral=True)
@@ -855,7 +873,7 @@ async def on_ready() -> None:
             fraction_severity *= adjust_factor
             for key in data[interaction.guild.id][interaction.user.id].opinions:
                 data[interaction.guild.id][interaction.user.id].opinions[key] *= adjust_factor
-            assert sum(map(abs, data[interaction.guild.id][interaction.user.id].opinions.values())) <= 1.0
+            assert sum(map(abs, data[interaction.guild.id][interaction.user.id].opinions.values())) <= 1
 
             data[interaction.guild.id][target.id].shallow_score = data[interaction.guild.id][
                                                                       target.id].shallow_score + fraction_severity * max(
@@ -893,12 +911,12 @@ async def on_ready() -> None:
                             except discord.errors.Forbidden:
                                 logger.error(
                                     f"Forbidden to timeout user \"{target_member.display_name}\" (id={target_member.id}).")
-
             await save_data(data)
 
+            formatted_severity: str = format_severity(fraction_severity)
             if not hidden:
                 # Send a message publicly
-                public_message: str = f"{interaction.user.mention} has {'up' if fraction_severity > 0 else 'down'}voted {target.mention} with severity {fraction_severity}. Reason: {reason}"  # If changing this line, also update on_message.
+                public_message: str = f"{interaction.user.mention} has {'up' if fraction_severity > 0 else 'down'}voted {target.mention} with severity {formatted_severity}. Reason: {reason}"  # If changing this line, also update on_message.
                 await interaction.channel.send(public_message)
             try:
                 # noinspection PyUnresolvedReferences
@@ -909,7 +927,7 @@ async def on_ready() -> None:
                 logger.error(
                     f"Interaction not found to send vote confirmation to \"{interaction.user.display_name}\". Processing may have taken too long. Proceeding to send a DM.")
                 await dm_member(interaction.user,
-                                f"With apologies for the delay, your vote for {target.display_name} with severity {fraction_severity} has been successfully processed. Your opinion on {target.display_name} is now "
+                                f"With apologies for the delay, your vote for {target.display_name} with severity {formatted_severity} has been successfully processed. Your opinion on {target.display_name} is now "
                                 f"{data[interaction.guild.id][interaction.user.id].opinions[target.id]}.")
 
     async with data_lock:
