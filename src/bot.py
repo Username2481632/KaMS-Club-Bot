@@ -54,7 +54,8 @@ TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0,
 REQUIRED_ROLES: list[set[int]] = [
     {1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174},
     {1256626845970075779, 1256627378763993189},
-    {1261372426382737610, 1261371054161662044}]  # Ids of roles that are required to access the server
+    {1261372426382737610,
+     1261371054161662044}]  # Ids of roles that are required to access the server. TODO: move to config
 MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
     f"Hi there. It seems like you're missing some roles, which is why {'you\'ve been temporarily timed out' if not timed_out else 'your disrespect timeout has been put on hold and will stop decreasing'}. No worries, "
     f"though! To {'regain access to the server' if not timed_out else 'keep serving your disrespect timeout until it\'s done'}, just visit the <id:customize> tab to assign yourself the necessary roles. If you have any "
@@ -154,9 +155,8 @@ class GuildConfig:
     Class to represent the configuration of a guild.
     """
 
-    def __init__(self, gid: int, wd: str = "",
+    def __init__(self, wd: str = "",
                  pp: bool = False, l: LoggerConfig = LoggerConfig()) -> None:
-        self.id = gid
         self.welcome_dm = wd
         self.purge_polls = pp
         self.logger = l
@@ -167,7 +167,6 @@ class GuildConfig:
         :return:
         """
         return {
-            "id": self.id,
             "welcome_dm": self.welcome_dm,
             "purge_polls": self.purge_polls,
             "logger": self.logger
@@ -181,7 +180,6 @@ class GuildConfig:
         :return:
         """
         return cls(
-            gid=param["id"],
             wd=param.get("welcome_dm", ""),
             pp=param.get("purge_polls", False),
             l=LoggerConfig.from_dict(param.get("logger", {}))
@@ -759,7 +757,7 @@ async def on_ready() -> None:
 
     # If the config file is blank of if it doesn't contain `guild_ids`, initialize it with all the guilds the bot is in
     if not os.path.exists(CONFIG_FILE):
-        json.dump({"guilds": [GuildConfig(guild.id).to_dict() for guild in bot.guilds]}, open(CONFIG_FILE, "w"),
+        json.dump({str(guild.id): GuildConfig().to_dict() for guild in bot.guilds}, open(CONFIG_FILE, "w"),
                   indent=2)
     else:
         try:
@@ -771,16 +769,16 @@ async def on_ready() -> None:
             return
     # noinspection PyGlobalUndefined
     global GUILDS
-    GUILDS = [GuildConfig.from_dict(g) for g in config_data.get("guilds", [])]
+    GUILDS = {int(g_id): GuildConfig.from_dict(g_cfg) for g_id, g_cfg in config_data.items()}
     if not GUILDS:
         # Terminate the bot
         logger.error("No guilds configured; shutting down.")
         await shutdown()
         return
-    for g in GUILDS:
-        guild: discord.Guild | None = bot.get_guild(g.id)
+    for g_id in GUILDS.keys():
+        guild: discord.Guild | None = bot.get_guild(g_id)
         if guild is None:
-            logger.error(f"Could not find provided guild, id={g.id}. Please check the config file.")
+            logger.error(f"Could not find provided guild, id={g_id}. Please check the config file.")
             exit(1)
         guild_objects.append(guild)
 
@@ -1011,7 +1009,7 @@ async def on_member_join(member: discord.Member, data: FullDataType) -> None:
         data = await load_data()
         await data_lock.acquire()
         locked = True
-    welcome_dm: str = next(g for g in GUILDS if g.id == member.guild.id).welcome_dm
+    welcome_dm: str = GUILDS[member.guild.id].welcome_dm
     if member.id not in data[member.guild.id]:
         if welcome_dm:
             # DM the member
