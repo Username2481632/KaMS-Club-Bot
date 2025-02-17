@@ -51,11 +51,6 @@ TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0,
                                                 TIMEOUT_THRESHOLD: TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds() / 60.0,
                                                 -1.0: 20.0, -2.0: 300.0, -3.0: 10080.0,
                                                 -4.0: 10080.0}  # Score: Timeout duration (minutes)
-REQUIRED_ROLES: list[set[int]] = [
-    {1225900663746330795, 1225899714508226721, 1225900752225177651, 1225900807216562217, 1260753793566511174},
-    {1256626845970075779, 1256627378763993189},
-    {1261372426382737610,
-     1261371054161662044}]  # Ids of roles that are required to access the server. TODO: move to config
 MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
     f"Hi there. It seems like you're missing some roles, which is why {'you\'ve been temporarily timed out' if not timed_out else 'your disrespect timeout has been put on hold and will stop decreasing'}. No worries, "
     f"though! To {'regain access to the server' if not timed_out else 'keep serving your disrespect timeout until it\'s done'}, just visit the <id:customize> tab to assign yourself the necessary roles. If you have any "
@@ -156,10 +151,12 @@ class GuildConfig:
     """
 
     def __init__(self, wd: str = "",
-                 pp: bool = False, l: LoggerConfig = LoggerConfig()) -> None:
+                 pp: bool = False, l: LoggerConfig = LoggerConfig(),
+                 rr: list[set[int]] | None = None) -> None:
         self.welcome_dm = wd
         self.purge_polls = pp
         self.logger = l
+        self.required_roles = rr if rr is not None else []
 
     def to_dict(self) -> dict:
         """
@@ -169,7 +166,8 @@ class GuildConfig:
         return {
             "welcome_dm": self.welcome_dm,
             "purge_polls": self.purge_polls,
-            "logger": self.logger
+            "logger": self.logger,
+            "required_roles": self.required_roles
         }
 
     @classmethod
@@ -182,7 +180,8 @@ class GuildConfig:
         return cls(
             wd=param.get("welcome_dm", ""),
             pp=param.get("purge_polls", False),
-            l=LoggerConfig.from_dict(param.get("logger", {}))
+            l=LoggerConfig.from_dict(param.get("logger", {})),
+            rr=param.get("required_roles", [])
         )
 
 
@@ -1140,7 +1139,8 @@ async def day_change() -> None:
                 # Timeout members that are missing required roles
                 if member is not None and not member.bot:
                     member_role_ids: set[int] = set(rl.id for rl in member.roles)
-                    if not all(member_role_ids & role_category for role_category in REQUIRED_ROLES):
+                    if not all(member_role_ids & role_category for role_category in
+                               GUILDS[member.guild.id].required_roles):
                         try:
                             was_timed_out: bool = member.timed_out_until is not None and member.timed_out_until > discord.utils.utcnow()
                             await member.timeout(MISSING_ROLE_TIMEOUT_DURATION, reason="Missing required roles.")
@@ -1235,8 +1235,10 @@ async def on_member_update(before: discord.Member, after: discord.Member):
     """
     if before.roles == after.roles:
         return
-    if not all(set(rl.id for rl in before.roles) & role_category for role_category in REQUIRED_ROLES) and all(
-            set(rl.id for rl in after.roles) & role_category for role_category in REQUIRED_ROLES):
+    if not all(set(rl.id for rl in before.roles) & role_category for role_category in
+               GUILDS[before.guild.id].required_roles) and all(
+            set(rl.id for rl in after.roles) & role_category for role_category in
+            GUILDS[after.guild.id].required_roles):
         assert before.id == after.id
         async with data_lock:
             data: FullDataType = await load_data()
