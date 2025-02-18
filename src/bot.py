@@ -152,11 +152,11 @@ class GuildConfig:
 
     def __init__(self, wd: str = "",
                  pp: bool = False, l: LoggerConfig = LoggerConfig(),
-                 rr: list[set[int]] | None = None) -> None:
+                 rr: list[list[int]] | None = None) -> None:
         self.welcome_dm = wd
         self.purge_polls = pp
         self.logger = l
-        self.required_roles = rr if rr is not None else []
+        self.required_roles = [set(roles) for roles in rr] if rr is not None else []
 
     def to_dict(self) -> dict:
         """
@@ -167,7 +167,7 @@ class GuildConfig:
             "welcome_dm": self.welcome_dm,
             "purge_polls": self.purge_polls,
             "logger": self.logger,
-            "required_roles": self.required_roles
+            "required_roles": [list(roles) for roles in self.required_roles]
         }
 
     @classmethod
