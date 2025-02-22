@@ -24,6 +24,7 @@ import signal
 import sys
 import time
 import traceback
+import typing
 from types import FrameType
 from typing import Callable, AsyncGenerator
 
@@ -145,6 +146,16 @@ class LoggerConfig:
         )
 
 
+class GuildConfigDictType(typing.TypedDict):
+    """
+    TypedDict for the guild configuration.
+    """
+    welcome_dm: str
+    purge_polls: bool
+    logger: LoggerConfig
+    required_roles: list[list[int]]
+
+
 class GuildConfig:
     """
     Class to represent the configuration of a guild.
@@ -158,7 +169,7 @@ class GuildConfig:
         self.logger = l
         self.required_roles = [set(roles) for roles in rr] if rr is not None else []
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> GuildConfigDictType:
         """
         Convert the guild config to a dictionary.
         :return:
@@ -171,7 +182,7 @@ class GuildConfig:
         }
 
     @classmethod
-    def from_dict(cls, param):
+    def from_dict(cls, param) -> "GuildConfig":
         """
         Create a GuildConfig from a dictionary.
         :param param:
@@ -754,36 +765,127 @@ async def on_ready() -> None:
     if is_initialized:
         return
 
-    # If the config file is blank of if it doesn't contain `guild_ids`, initialize it with all the guilds the bot is in
+    # Config file check and creation
     if not os.path.exists(CONFIG_FILE):
-        json.dump({str(guild.id): GuildConfig().to_dict() for guild in bot.guilds}, open(CONFIG_FILE, "w"),
-                  indent=2)
+        json.dump(
+            {str(guild.id): GuildConfig().to_dict() for guild in bot.guilds},
+            open(CONFIG_FILE, "w"),
+            indent=2
+        )
+        logger.info("Config file not found. Created a default one with all current guilds.")
     else:
         try:
             with open(CONFIG_FILE) as config_file:
-                config_data = json.load(config_file)
-        except json.JSONDecodeError:
-            logger.error(f"Invalid configuration file ({CONFIG_FILE}); shutting down.")
+                config_data: dict = json.load(config_file)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse config file {CONFIG_FILE}: {str(e)}")
             await shutdown()
             return
+
+    # Get default configs for validation
+    default_guild_config: dict = GuildConfig().to_dict()
+    expected_guild_keys: set[str] = set(default_guild_config.keys())
+    default_logger_config: dict = LoggerConfig().to_dict()
+    expected_logger_keys: set[str] = set(default_logger_config.keys())
+
     # noinspection PyGlobalUndefined
     global GUILDS
-    GUILDS = {int(g_id): GuildConfig.from_dict(g_cfg) for g_id, g_cfg in config_data.items()}
-    if not GUILDS:
-        # Terminate the bot
-        logger.error("No guilds configured; shutting down.")
-        await shutdown()
-        return
-    for g_id in GUILDS.keys():
+    GUILDS = {}
+
+    for g_id_str, g_cfg in config_data.items():
+        # Validate guild ID format
+        try:
+            g_id: int = int(g_id_str)
+        except ValueError:
+            logger.error(f"Invalid guild ID '{g_id_str}' - must be integer. Skipping entry.")
+            continue
+
+        # Get guild info for logging
         guild: discord.Guild | None = bot.get_guild(g_id)
         if guild is None:
-            logger.error(f"Could not find provided guild, id={g_id}. Please check the config file.")
-            exit(1)
-        guild_objects.append(guild)
+            logger.error(f"Configured guild id={g_id} not found - bot not in server. Skipping entry.")
+            continue
+        guild_label: str = f"{guild.name} (id={g_id})"
+
+        # Validate top-level keys
+        present_guild_keys: set[str] = set(g_cfg.keys())
+
+        # Check for missing keys
+        for missing_key in expected_guild_keys - present_guild_keys:
+            logger.warning(f"{guild_label}: Missing config key '{missing_key}' - using default value.")
+
+        # Check for unknown top-level keys
+        for unknown_key in present_guild_keys - expected_guild_keys:
+            logger.warning(f"{guild_label}: Unknown config key '{unknown_key}'")
+
+        # Validate logger config
+        logger_cfg: dict = g_cfg.get('logger', {})
+        present_logger_keys: set[str] = set(logger_cfg.keys())
+
+        # Check for missing logger keys
+        for missing_key in expected_logger_keys - present_logger_keys:
+            logger.warning(f"{guild_label} Logger: Missing config key '{missing_key}' - using default value.")
+
+        # Check for unknown logger keys
+        for unknown_key in present_logger_keys - expected_logger_keys:
+            logger.warning(f"{guild_label} Logger: Unknown key '{unknown_key}'")
+
+        # Validate required_roles structure
+        required_roles: list = g_cfg.get('required_roles', [])
+        if not isinstance(required_roles, list):
+            logger.error(
+                f"{guild_label}: Invalid required_roles format, must be list of role lists. Assuming no requirements.")
+            required_roles = []
+
+        # Validate individual role groups
+        valid_roles: list[list[int]] = []
+        for role_group in required_roles:
+            if not isinstance(role_group, list):
+                logger.error(
+                    f"{guild_label}: Invalid required_roles group format \"{role_group}\", must be list of role IDs. Skipping group.")
+                continue
+            valid_group: list[int] = []
+            for role_id in role_group:
+                if not isinstance(role_id, int):
+                    logger.error(f"{guild_label}: Non-integer role ID {role_id} found. Skipping group.")
+                    valid_group = []
+                    break
+                if not guild.get_role(role_id):
+                    logger.error(f"{guild_label}: Role ID {role_id} not found in guild. Skipping group.")
+                    valid_group = []
+                    break
+                valid_group.append(role_id)
+            if valid_group:
+                valid_roles.append(valid_group)
+
+        # Create validated config
+        try:
+            GUILDS[g_id] = GuildConfig.from_dict({
+                **default_guild_config,  # Start with defaults
+                **g_cfg,  # Override with config values
+                'required_roles': valid_roles
+            })
+        except Exception as e:
+            logger.error(f"{guild_label}: Failed to create config - {str(e)}.")
+
+    # Final guild verification
+    for g_id in list(GUILDS.keys()):
+        guild: discord.Guild | None = bot.get_guild(g_id)
+        if not guild:
+            logger.error(f"Configured guild id={g_id} not found - bot not in server. Removing from config.")
+            del GUILDS[g_id]
+
+    if not GUILDS:
+        logger.error("No valid guild configurations found.")
+        await shutdown()
+        return
+
+    # Initialize guild objects
+    guild_objects = [bot.get_guild(g_id) for g_id in GUILDS.keys()]
 
     logger.info("Verifying bot nicknames...")
-    for guild in guild_objects:
-        await update_bot_nickname(guild)
+    for gld in guild_objects:
+        await update_bot_nickname(gld)
 
     @bot.tree.command(name="justice_toolbox", description="Access the Justice Toolbox.", guilds=guild_objects)
     async def slash_justice_toolbox(interaction: discord.Interaction) -> None:
@@ -930,8 +1032,8 @@ async def on_ready() -> None:
     async with data_lock:
         logger.info("Bot is ready, starting to sync commands...")
         commands_synced: list[discord.app_commands.AppCommand] = []
-        for guild in guild_objects:
-            commands_synced.extend(await bot.tree.sync(guild=guild))
+        for gld in guild_objects:
+            commands_synced.extend(await bot.tree.sync(guild=gld))
 
         assert not bot.tree.get_commands()
         assert len(commands_synced) == sum(len(bot.tree.get_commands(guild=g)) for g in guild_objects)
@@ -1237,8 +1339,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
         return
     if not all(set(rl.id for rl in before.roles) & role_category for role_category in
                GUILDS[before.guild.id].required_roles) and all(
-            set(rl.id for rl in after.roles) & role_category for role_category in
-            GUILDS[after.guild.id].required_roles):
+        set(rl.id for rl in after.roles) & role_category for role_category in GUILDS[after.guild.id].required_roles):
         assert before.id == after.id
         async with data_lock:
             data: FullDataType = await load_data()
