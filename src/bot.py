@@ -34,12 +34,16 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from scipy.interpolate import interp1d
 
+# ===================================================INITIALIZATION=====================================================
 # Set the timezone to UTC
 os.environ['TZ'] = 'UTC'
 time.tzset()
+# Ensure working directory is the same as the script's directory. This is crucial for relative paths to work correctly.
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # ======================================================PARAMETERS======================================================
 CONFIG_FILE: str = "../config.json"
+DATA_FILE: str = "../data.json"
 JUSTICE_COUNT: int = 5
 JUSTICE_CHANNEL_NAME: str = "justices"
 JUSTICE_CHANNEL_CATEGORY: str = "Information"
@@ -87,7 +91,6 @@ intents.members = True
 intents.message_content = True
 intents.guilds = True
 bot = commands.Bot(command_prefix='', intents=intents)
-data_file_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data.json"))
 # Configure logging, excluding discord logs
 logger = logging.getLogger('kams-bot')
 logger.setLevel(logging.INFO)
@@ -302,9 +305,9 @@ async def load_data() -> FullDataType:
     Load data from the JSON file asynchronously.
     :return: The data dictionary.
     """
-    if os.path.exists(data_file_path):
+    if os.path.exists(DATA_FILE):
         try:
-            with open(data_file_path, "r", encoding="utf-8") as file:
+            with open(DATA_FILE, "r", encoding="utf-8") as file:
                 return {int(key1): {int(key2): MemberEntry.from_dict(value) for key2, value in subdict.items()} for
                         key1, subdict in json.load(file).items()}
         except (IOError, json.JSONDecodeError) as e:
@@ -312,7 +315,7 @@ async def load_data() -> FullDataType:
     return {}
 
 
-async def save_data(data: FullDataType, output_file: str = data_file_path) -> None:
+async def save_data(data: FullDataType, output_file: str = DATA_FILE) -> None:
     """
     Save data to the JSON file asynchronously.
     :param data: The data dictionary to save.
