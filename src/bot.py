@@ -224,11 +224,11 @@ class MemberEntry:
         :return:
         """
         return cls(shallow_score=fractions.Fraction(data.get("shallow_score", "0")),
-            deep_score=fractions.Fraction(data.get("deep_score", "0")),
-            credibility=fractions.Fraction(data.get("credibility", "0")),
-            opinions={int(k): fractions.Fraction(v) for k, v in data.get("opinions", {}).items()},
-            latest_message_time=data.get("latest_message_time", discord.utils.DISCORD_EPOCH / 1000),
-            conversation_start_time=data.get("conversation_start_time", discord.utils.DISCORD_EPOCH / 1000),
+                   deep_score=fractions.Fraction(data.get("deep_score", "0")),
+                   credibility=fractions.Fraction(data.get("credibility", "0")),
+                   opinions={int(k): fractions.Fraction(v) for k, v in data.get("opinions", {}).items()},
+                   latest_message_time=data.get("latest_message_time", discord.utils.DISCORD_EPOCH / 1000),
+                   conversation_start_time=data.get("conversation_start_time", discord.utils.DISCORD_EPOCH / 1000),
                    suspended_timeout=data.get("suspended_timeout"))
 
     def to_dict(self) -> dict:
@@ -240,8 +240,7 @@ class MemberEntry:
         return {"shallow_score": str(self.shallow_score), "deep_score": str(self.deep_score),
                 "credibility": str(self.credibility), "opinions": {str(k): str(v) for k, v in self.opinions.items()},
                 "latest_message_time": self.latest_message_time,
-                "conversation_start_time": self.conversation_start_time,
-                "suspended_timeout": self.suspended_timeout}
+                "conversation_start_time": self.conversation_start_time, "suspended_timeout": self.suspended_timeout}
 
 
 # Define the type for the data structure
@@ -322,7 +321,7 @@ def format_severity(severity: fractions.Fraction) -> str:
     elif severity == 0:
         return "0"
     else:
-        return str(round(severity, SEVERITY_DISPLAY_PRECISION)).rstrip('0').rstrip('.')
+        return str(round(float(severity), SEVERITY_DISPLAY_PRECISION)).rstrip('0').rstrip('.')
 
 
 async def set_respect_role(guild: discord.Guild, member: discord.Member, score: fractions.Fraction) -> None:
@@ -835,7 +834,7 @@ async def on_ready() -> None:
         # Create validated config
         try:
             GUILDS[g_id] = GuildConfig.from_dict({**default_guild_config,  # Start with defaults
-                **g_cfg,  # Override with config values
+                                                  **g_cfg,  # Override with config values
                                                   'required_roles': valid_roles})
         except Exception as e:
             logger.error(f"{guild_label}: Failed to create config - {str(e)}.")
@@ -991,7 +990,7 @@ async def on_ready() -> None:
             try:
                 # noinspection PyUnresolvedReferences
                 await interaction.response.send_message(
-                    f"Vote successful! Your opinion on {target.display_name} is now {data[interaction.guild.id][interaction.user.id].opinions[target.id]}",
+                    f"Vote successful! Your opinion on {target.display_name} is now {format_severity(data[interaction.guild.id][interaction.user.id].opinions[target.id])}",
                     ephemeral=True, delete_after=15)
             except discord.errors.NotFound:
                 logger.error(
