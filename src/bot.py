@@ -395,7 +395,8 @@ async def on_message(message: discord.Message, override: bool = False) -> None:
         if message_timestamp - data[message.guild.id][author_id].latest_message_time > 300:
             # Update credibility based on the time difference and reset conversation start time
             data[message.guild.id][author_id].credibility += fractions.Fraction(
-                message_timestamp - data[message.guild.id][author_id].conversation_start_time) * CREDIBILITY_RATIO
+                data[message.guild.id][author_id].latest_message_time - data[message.guild.id][
+                    author_id].conversation_start_time) * CREDIBILITY_RATIO
             data[message.guild.id][author_id].conversation_start_time = message_timestamp
 
         data[message.guild.id][author_id].latest_message_time = message_timestamp
@@ -1191,7 +1192,8 @@ async def day_change() -> None:
 
                 # Apply credibility decay
                 data[guild.id][member_id].credibility = max(fractions.Fraction(0),
-                                                            data[guild.id][member_id].credibility - CREDIBILITY_DECAY)
+                                                            data[guild.id][
+                                                                member_id].credibility - CREDIBILITY_DECAY * CREDIBILITY_RATIO)
 
             # Calculate justices
             justices: list[discord.Member] = []
