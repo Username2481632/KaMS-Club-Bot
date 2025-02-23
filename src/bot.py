@@ -386,7 +386,7 @@ async def on_message(message: discord.Message, override: bool = False) -> None:
     async with data_lock:
         data: FullDataType = await load_data()
         if author_id not in data[message.guild.id]:
-            await on_member_join(message.author, data)
+            await on_member_join(message.author, data, message.guild)
 
         # Get the timestamp of the message (use edited_at if available, else use created_at)
         message_timestamp: float = message.edited_at.timestamp() if message.edited_at else message.created_at.timestamp()
@@ -886,7 +886,7 @@ async def on_ready() -> None:
         async with data_lock:
             data: FullDataType = await load_data()
             if interaction.user.id not in data[interaction.guild.id]:
-                await on_member_join(interaction.user, data)
+                await on_member_join(interaction.user, data, interaction.guild)
 
             if len(data[interaction.guild.id][interaction.user.id].opinions) == 0:
                 # noinspection PyUnresolvedReferences
@@ -920,11 +920,11 @@ async def on_ready() -> None:
         async with data_lock:
             data: FullDataType = await load_data()
             if interaction.user.id not in data[interaction.guild.id]:
-                await on_member_join(interaction.user, data)
+                await on_member_join(interaction.user, data, interaction.guild)
             target_member: discord.Member | None = interaction.guild.get_member(target.id)
             # If the target is not in the server, still process the vote but just don't take immediate action
             if target.id not in data[interaction.guild.id] and target_member is not None:
-                await on_member_join(target_member, data)
+                await on_member_join(target_member, data, interaction.guild)
             if fraction_severity < -1 or fraction_severity > 1:
                 # noinspection PyUnresolvedReferences
                 await interaction.response.send_message("Invalid severity value. Please use a value between -1 and 1.",
@@ -1067,17 +1067,27 @@ async def get_justice_ids(guild: discord.Guild) -> list[int]:
 
 
 @bot.event
-async def on_member_join(member: discord.Member | discord.User, data: FullDataType) -> None:
+async def on_member_join(member: discord.Member | discord.User, data: FullDataType, guild: discord.Guild) -> None:
     """
     Event that runs when a member joins the server, welcoming them and setting their roles.
+    :param guild:
     :param data:
     :param member:
     :return:
     """
     message_sent: bool = False
-    welcome_dm: str = GUILDS[member.guild.id].welcome_dm
-    if hasattr(member, "guild") and member.id not in data[member.guild.id]:
-        if welcome_dm and isinstance(member, discord.Member):
+    welcome_dm: str = GUILDS[guild.id].welcome_dm
+    if member.id not in data[guild.id]:
+        message_sent = True
+        data[guild.id][member.id] = MemberEntry()
+        await save_data(data)
+    if not hasattr(member, "guild"):
+        if welcome_dm:
+            logger.info(
+                f"Unable to welcome user {member.display_name} (id={member.id}) to server {guild.name} because they are no longer a member. Data has been updated.")
+        return
+    if message_sent:
+        if welcome_dm:
             # DM the member
             sending_message: str = ""
             # If the member joined over 5 minutes ago
@@ -1086,14 +1096,13 @@ async def on_member_join(member: discord.Member | discord.User, data: FullDataTy
             sending_message += welcome_dm
             if member.id != bot.user.id:
                 await dm_member(member, sending_message)
-            message_sent = True
-        data[member.guild.id][member.id] = MemberEntry()
-        await save_data(data)
+        else:
+            message_sent = False
     else:
-        await set_justice_role(member, await get_justice_ids(member.guild))
+        await set_justice_role(member, await get_justice_ids(guild))
 
-    await set_respect_role(member.guild, member,
-                           data[member.guild.id][member.id].shallow_score + data[member.guild.id][member.id].deep_score)
+    await set_respect_role(guild, member,
+                           data[guild.id][member.id].shallow_score + data[guild.id][member.id].deep_score)
     logger.info(
         f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time) " if not message_sent and welcome_dm else ""}and their roles have been set.")
 
@@ -1166,7 +1175,7 @@ async def day_change() -> None:
                 if not member.bot:
                     member_count += 1
                     if member.id not in data[guild.id]:
-                        await on_member_join(member, data)
+                        await on_member_join(member, data, guild)
             for member_id in data[guild.id]:
                 if data[guild.id][member_id].shallow_score > 0:
                     data[guild.id][member_id].deep_score += math.sqrt(data[guild.id][member_id].shallow_score) / (
@@ -1304,7 +1313,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
         async with data_lock:
             data: FullDataType = await load_data()
             if not after.id in data[after.guild.id]:
-                await on_member_join(after, data)
+                await on_member_join(after, data, after.guild)
             if data[after.guild.id][after.id].suspended_timeout is not None:
                 try:
                     if data[after.guild.id][after.id].suspended_timeout > 0.0:
