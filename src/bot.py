@@ -131,10 +131,7 @@ class LoggerConfig:
         Convert the logger config to a dictionary.
         :return:
         """
-        return {
-            "enabled": self.enabled,
-            "channel_name": self.channel_name
-        }
+        return {"enabled": self.enabled, "channel_name": self.channel_name}
 
     @classmethod
     def from_dict(cls, param):
@@ -143,10 +140,7 @@ class LoggerConfig:
         :param param:
         :return:
         """
-        return cls(
-            enabled=param.get("enabled", False),
-            channel_name=param.get("channel_name", "logger")
-        )
+        return cls(enabled=param.get("enabled", False), channel_name=param.get("channel_name", "logger"))
 
 
 class GuildConfigDictType(typing.TypedDict):
@@ -164,8 +158,7 @@ class GuildConfig:
     Class to represent the configuration of a guild.
     """
 
-    def __init__(self, wd: str = "",
-                 pp: bool = False, l: LoggerConfig = LoggerConfig(),
+    def __init__(self, wd: str = "", pp: bool = False, l: LoggerConfig = LoggerConfig(),
                  rr: list[list[int]] | None = None) -> None:
         self.welcome_dm = wd
         self.purge_polls = pp
@@ -177,12 +170,8 @@ class GuildConfig:
         Convert the guild config to a dictionary.
         :return:
         """
-        return {
-            "welcome_dm": self.welcome_dm,
-            "purge_polls": self.purge_polls,
-            "logger": self.logger,
-            "required_roles": [list(roles) for roles in self.required_roles]
-        }
+        return {"welcome_dm": self.welcome_dm, "purge_polls": self.purge_polls, "logger": self.logger,
+                "required_roles": [list(roles) for roles in self.required_roles]}
 
     @classmethod
     def from_dict(cls, param) -> "GuildConfig":
@@ -191,12 +180,8 @@ class GuildConfig:
         :param param:
         :return:
         """
-        return cls(
-            wd=param.get("welcome_dm", ""),
-            pp=param.get("purge_polls", False),
-            l=LoggerConfig.from_dict(param.get("logger", {})),
-            rr=param.get("required_roles", [])
-        )
+        return cls(wd=param.get("welcome_dm", ""), pp=param.get("purge_polls", False),
+                   l=LoggerConfig.from_dict(param.get("logger", {})), rr=param.get("required_roles", []))
 
 
 class MemberEntry:
@@ -238,15 +223,13 @@ class MemberEntry:
         :param data:
         :return:
         """
-        return cls(
-            shallow_score=fractions.Fraction(data.get("shallow_score", "0")),
+        return cls(shallow_score=fractions.Fraction(data.get("shallow_score", "0")),
             deep_score=fractions.Fraction(data.get("deep_score", "0")),
             credibility=fractions.Fraction(data.get("credibility", "0")),
             opinions={int(k): fractions.Fraction(v) for k, v in data.get("opinions", {}).items()},
             latest_message_time=data.get("latest_message_time", discord.utils.DISCORD_EPOCH / 1000),
             conversation_start_time=data.get("conversation_start_time", discord.utils.DISCORD_EPOCH / 1000),
-            suspended_timeout=data.get("suspended_timeout")
-        )
+                   suspended_timeout=data.get("suspended_timeout"))
 
     def to_dict(self) -> dict:
         """
@@ -254,15 +237,11 @@ class MemberEntry:
 
         :return:
         """
-        return {
-            "shallow_score": str(self.shallow_score),
-            "deep_score": str(self.deep_score),
-            "credibility": str(self.credibility),
-            "opinions": {str(k): str(v) for k, v in self.opinions.items()},
-            "latest_message_time": self.latest_message_time,
-            "conversation_start_time": self.conversation_start_time,
-            "suspended_timeout": self.suspended_timeout
-        }
+        return {"shallow_score": str(self.shallow_score), "deep_score": str(self.deep_score),
+                "credibility": str(self.credibility), "opinions": {str(k): str(v) for k, v in self.opinions.items()},
+                "latest_message_time": self.latest_message_time,
+                "conversation_start_time": self.conversation_start_time,
+                "suspended_timeout": self.suspended_timeout}
 
 
 # Define the type for the data structure
@@ -417,8 +396,7 @@ async def on_message(message: discord.Message, override: bool = False) -> None:
         if message_timestamp - data[message.guild.id][author_id].latest_message_time > 300:
             # Update credibility based on the time difference and reset conversation start time
             data[message.guild.id][author_id].credibility += fractions.Fraction(
-                message_timestamp - data[message.guild.id][
-                    author_id].conversation_start_time) * CREDIBILITY_RATIO
+                message_timestamp - data[message.guild.id][author_id].conversation_start_time) * CREDIBILITY_RATIO
             data[message.guild.id][author_id].conversation_start_time = message_timestamp
 
         data[message.guild.id][author_id].latest_message_time = message_timestamp
@@ -546,8 +524,7 @@ class RequestBanModal(discord.ui.Modal):
             justice_ids: list[int] = await get_justice_ids(interaction.guild)
             if len(justice_ids) == JUSTICE_COUNT and all(
                     justice_id in ban_requests[interaction.guild.id][target_object.id] and
-                    ban_requests[interaction.guild.id][target_object.id][justice_id] for
-                    justice_id in justice_ids):
+                    ban_requests[interaction.guild.id][target_object.id][justice_id] for justice_id in justice_ids):
                 # Ban the user
                 try:
                     await interaction.guild.ban(target_object, reason="Requested by justices.")
@@ -559,8 +536,8 @@ class RequestBanModal(discord.ui.Modal):
             justice_ids: list[int] = await get_justice_ids(interaction.guild)
             if sum(1 for justice_id in justice_ids if
                    justice_id in ban_requests[interaction.guild.id][target_object.id] and not
-                   ban_requests[interaction.guild.id][target_object.id][
-                       justice_id]) >= 2 * len(justice_ids) / 3 and any(
+                   ban_requests[interaction.guild.id][target_object.id][justice_id]) >= 2 * len(
+                justice_ids) / 3 and any(
                 ban.user.id == target_object.id for ban in [ban async for ban in interaction.guild.bans()]):
                 # Unban the user
                 await interaction.guild.unban(target_object, reason="Requested by justices.")
@@ -673,8 +650,7 @@ async def dm_member(member: discord.Member, message: str) -> None:
         logger.error(f"Forbidden to send message to \"{member.display_name}\" (id={member.id}).")
 
 
-async def message_generator(channel, after: datetime.datetime) -> AsyncGenerator[
-    discord.Message, None]:
+async def message_generator(channel, after: datetime.datetime) -> AsyncGenerator[discord.Message, None]:
     """
     Async generator that yields messages from a channel in chronological order.
     """
@@ -690,9 +666,8 @@ async def message_generator(channel, after: datetime.datetime) -> AsyncGenerator
         logger.error(f"Failed to fetch messages from channel {channel.name} ({channel.id}): {e}")
 
 
-def collect_generators(channel: discord.abc.GuildChannel,
-                       after_time: datetime.datetime,
-                       processed: set[int]) -> list[AsyncGenerator[discord.Message, None]]:
+def collect_generators(channel: discord.abc.GuildChannel, after_time: datetime.datetime, processed: set[int]) -> list[
+    AsyncGenerator[discord.Message, None]]:
     """
     Collect async message generators while tracking processed channels
     """
@@ -770,11 +745,7 @@ async def on_ready() -> None:
 
     # Config file check and creation
     if not os.path.exists(CONFIG_FILE):
-        json.dump(
-            {str(guild.id): GuildConfig().to_dict() for guild in bot.guilds},
-            open(CONFIG_FILE, "w"),
-            indent=2
-        )
+        json.dump({str(guild.id): GuildConfig().to_dict() for guild in bot.guilds}, open(CONFIG_FILE, "w"), indent=2)
         logger.info("Config file not found. Created a default one with all current guilds.")
     else:
         try:
@@ -863,11 +834,9 @@ async def on_ready() -> None:
 
         # Create validated config
         try:
-            GUILDS[g_id] = GuildConfig.from_dict({
-                **default_guild_config,  # Start with defaults
+            GUILDS[g_id] = GuildConfig.from_dict({**default_guild_config,  # Start with defaults
                 **g_cfg,  # Override with config values
-                'required_roles': valid_roles
-            })
+                                                  'required_roles': valid_roles})
         except Exception as e:
             logger.error(f"{guild_label}: Failed to create config - {str(e)}.")
 
@@ -986,9 +955,8 @@ async def on_ready() -> None:
                                            target.id].deep_score)
                 if data[interaction.guild.id][target.id].shallow_score < (TIMEOUT_THRESHOLD + 1.0):
                     # Timeout procedure
-                    timeout_minutes = calculate_timeout(
-                        data[interaction.guild.id][target.id].shallow_score + min(
-                            data[interaction.guild.id][target.id].deep_score, fractions.Fraction(1, 2)))
+                    timeout_minutes = calculate_timeout(data[interaction.guild.id][target.id].shallow_score + min(
+                        data[interaction.guild.id][target.id].deep_score, fractions.Fraction(1, 2)))
                     old_duration: datetime.timedelta = datetime.timedelta()
                     if target_member.timed_out_until is not None and (
                             target_member.timed_out_until - discord.utils.utcnow()) > old_duration:
@@ -1100,7 +1068,7 @@ async def get_justice_ids(guild: discord.Guild) -> list[int]:
 
 
 @bot.event
-async def on_member_join(member: discord.Member, data: FullDataType) -> None:
+async def on_member_join(member: discord.Member | discord.User, data: FullDataType) -> None:
     """
     Event that runs when a member joins the server, welcoming them and setting their roles.
     :param data:
@@ -1108,14 +1076,9 @@ async def on_member_join(member: discord.Member, data: FullDataType) -> None:
     :return:
     """
     message_sent: bool = False
-    locked: bool = False
-    if data is None:
-        data = await load_data()
-        await data_lock.acquire()
-        locked = True
     welcome_dm: str = GUILDS[member.guild.id].welcome_dm
-    if member.id not in data[member.guild.id]:
-        if welcome_dm:
+    if hasattr(member, "guild") and member.id not in data[member.guild.id]:
+        if welcome_dm and isinstance(member, discord.Member):
             # DM the member
             sending_message: str = ""
             # If the member joined over 5 minutes ago
@@ -1125,7 +1088,6 @@ async def on_member_join(member: discord.Member, data: FullDataType) -> None:
             if member.id != bot.user.id:
                 await dm_member(member, sending_message)
             message_sent = True
-
         data[member.guild.id][member.id] = MemberEntry()
         await save_data(data)
     else:
@@ -1133,8 +1095,6 @@ async def on_member_join(member: discord.Member, data: FullDataType) -> None:
 
     await set_respect_role(member.guild, member,
                            data[member.guild.id][member.id].shallow_score + data[member.guild.id][member.id].deep_score)
-    if locked:
-        data_lock.release()
     logger.info(
         f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time) " if not message_sent and welcome_dm else ""}and their roles have been set.")
 
@@ -1167,8 +1127,7 @@ def justice_score(server_data: ServerDataType, member: discord.Member) -> tuple[
     return server_data[member.id].deep_score, member.joined_at
 
 
-def is_timeout_prolongation_log(message: discord.Message, target_member_ids: list[
-    int]) -> bool:
+def is_timeout_prolongation_log(message: discord.Message, target_member_ids: list[int]) -> bool:
     """
     IMPORTANT: THIS WILL NEED UPDATING IF THERE IS A CHANGE IN THE LOGGING FORMAT
 
@@ -1308,8 +1267,7 @@ async def day_change() -> None:
                     deleted_count: int = len(
                         await polls_channel.purge(after=datetime.datetime(year=2024, month=7, day=14), check=lambda
                             msg: msg.poll is None and not msg.pinned and not msg.content.startswith("[POLL]"),
-                                                  bulk=True,
-                                                  limit=None, oldest_first=True,
+                                                  bulk=True, limit=None, oldest_first=True,
                                                   reason="Clean up non-poll messages."))
                     if deleted_count > 0:
                         logger.info(f"Deleted {deleted_count} non-poll messages in the polls channel.")
@@ -1323,8 +1281,8 @@ async def day_change() -> None:
             # Use the day_change_time of today as the after parameter
             deleted = await logger_channel.purge(
                 after=datetime.datetime.combine(datetime.date.today(), DAY_CHANGE_TIME),
-                check=lambda msg: is_timeout_prolongation_log(msg, log_deletions),
-                bulk=True, limit=None, reason="Clean up timeout logs.")
+                check=lambda msg: is_timeout_prolongation_log(msg, log_deletions), bulk=True, limit=None,
+                reason="Clean up timeout logs.")
             logger.info(f"Deleted {len(deleted)} role timeout prolongation logs from the logger channel.")
     logger.info("Full day change complete.")
 
