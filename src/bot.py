@@ -386,7 +386,7 @@ async def on_message(message: discord.Message, override: bool = False) -> None:
     async with data_lock:
         data: FullDataType = await load_data()
         if author_id not in data[message.guild.id]:
-            await on_member_join(message.author, data, message.guild)
+            await _on_member_join_impl(message.author, data, message.guild)
 
         # Get the timestamp of the message (use edited_at if available, else use created_at)
         message_timestamp: float = message.edited_at.timestamp() if message.edited_at else message.created_at.timestamp()
@@ -722,7 +722,7 @@ async def process_messages_in_order(generators: list[AsyncGenerator[discord.Mess
             logger.info("Shutdown requested. Halting missed-message processing.")
             return
 
-        created_at_ts, gen_id, gen, msg = heapq.heappop(heap)
+        created_at_ts, gen_id, gen, msg = heapq.heappop(heap, key=lambda x: x[0])
         await on_message(msg, True)
 
         try:
@@ -887,7 +887,7 @@ async def on_ready() -> None:
         async with data_lock:
             data: FullDataType = await load_data()
             if interaction.user.id not in data[interaction.guild.id]:
-                await on_member_join(interaction.user, data, interaction.guild)
+                await _on_member_join_impl(interaction.user, data, interaction.guild)
 
             if len(data[interaction.guild.id][interaction.user.id].opinions) == 0:
                 # noinspection PyUnresolvedReferences
@@ -921,11 +921,11 @@ async def on_ready() -> None:
         async with data_lock:
             data: FullDataType = await load_data()
             if interaction.user.id not in data[interaction.guild.id]:
-                await on_member_join(interaction.user, data, interaction.guild)
+                await _on_member_join_impl(interaction.user, data, interaction.guild)
             target_member: discord.Member | None = interaction.guild.get_member(target.id)
             # If the target is not in the server, still process the vote but just don't take immediate action
             if target.id not in data[interaction.guild.id] and target_member is not None:
-                await on_member_join(target_member, data, interaction.guild)
+                await _on_member_join_impl(target_member, data, interaction.guild)
             if fraction_severity < -1 or fraction_severity > 1:
                 # noinspection PyUnresolvedReferences
                 await interaction.response.send_message("Invalid severity value. Please use a value between -1 and 1.",
@@ -1068,7 +1068,20 @@ async def get_justice_ids(guild: discord.Guild) -> list[int]:
 
 
 @bot.event
-async def on_member_join(member: discord.Member | discord.User, data: FullDataType, guild: discord.Guild) -> None:
+async def on_member_join(member: discord.Member) -> None:
+    """
+    Standard Discord.py event handler for when a member joins the server.
+    This wrapper loads the data and calls the custom implementation.
+    
+    :param member: The member who joined
+    """
+    async with data_lock:
+        data: FullDataType = await load_data()
+        if member.guild.id not in data:
+            data[member.guild.id] = {}
+        await _on_member_join_impl(member, data, member.guild)
+        
+async def _on_member_join_impl(member: discord.Member | discord.User, data: FullDataType, guild: discord.Guild) -> None:
     """
     Event that runs when a member joins the server, welcoming them and setting their roles.
     :param guild:
@@ -1176,7 +1189,7 @@ async def day_change() -> None:
                 if not member.bot:
                     member_count += 1
                     if member.id not in data[guild.id]:
-                        await on_member_join(member, data, guild)
+                        await _on_member_join_impl(member, data, guild)
             for member_id in data[guild.id]:
                 if data[guild.id][member_id].shallow_score > 0:
                     data[guild.id][member_id].deep_score += math.sqrt(data[guild.id][member_id].shallow_score) / (
@@ -1315,7 +1328,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
         async with data_lock:
             data: FullDataType = await load_data()
             if not after.id in data[after.guild.id]:
-                await on_member_join(after, data, after.guild)
+                await _on_member_join_impl(after, data, after.guild)
             if data[after.guild.id][after.id].suspended_timeout is not None:
                 try:
                     if data[after.guild.id][after.id].suspended_timeout > 0.0:
