@@ -25,6 +25,8 @@ import sys
 import time
 import traceback
 import typing
+import socket
+import aiohttp
 from types import FrameType
 from typing import Callable, AsyncGenerator
 
@@ -1165,6 +1167,28 @@ def is_timeout_prolongation_log(message: discord.Message, target_member_ids: lis
                     embed.fields[1].value or embed.fields[3].value != ROLE_TIMEOUT_REASON:
                 return False
     return True
+
+
+class DiscordConnectionErrorFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        """
+        Filter out specific known network errors from discord.py logs.
+        These are unavoidable for my home network and irrelevant to the bot's functionality.
+        """
+        if record.exc_info is None:
+            return True
+        
+        exc_type = record.exc_info[0]
+        error_types = (
+            aiohttp.client_exceptions.ClientConnectorError,
+            aiohttp.client_exceptions.WSServerHandshakeError,
+            socket.gaierror
+        )
+        
+        return not (isinstance(exc_type, type) and issubclass(exc_type, error_types))
+
+for logger_name in ("discord.client", "discord.gateway", "discord.http", "discord"):
+    logging.getLogger(logger_name).addFilter(DiscordConnectionErrorFilter())
 
 
 @tasks.loop(time=DAY_CHANGE_TIME)
