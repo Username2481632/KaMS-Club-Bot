@@ -1425,7 +1425,7 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     :param exc_traceback:
     """
     # Print the error and stack trace
-    print("Unhandled exception occurred:")
+    logger.error("Unhandled exception occurred:")
     traceback.print_exception(exc_type, exc_value, exc_traceback)
 
     # If the script has been running for less than 1 hour, exit
@@ -1436,7 +1436,7 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     time.sleep(60)
 
     # Restart the script
-    print("Restarting script...")
+    logger.info("Restarting script...")
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
