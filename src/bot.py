@@ -1351,7 +1351,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
         assert before.id == after.id
         async with data_lock:
             data: FullDataType = await load_data()
-            if not after.id in data[after.guild.id]:
+            if after.id not in data[after.guild.id]:
                 await _on_member_join_impl(after, data, after.guild)
             if data[after.guild.id][after.id].suspended_timeout is not None:
                 try:
@@ -1437,7 +1437,7 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
     # Restart the script
     print("Restarting script...")
-    os.execv(sys.executable, ['python3.12', __file__])
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 # Register the global exception handler
