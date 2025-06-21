@@ -1,0 +1,17 @@
+[Unit]
+Description=IP Address Updater for GitHub Actions
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=%i
+WorkingDirectory=%h/KaMS-Club-Bot
+ExecStart=%h/KaMS-Club-Bot/venv/bin/python %h/KaMS-Club-Bot/ip_updater.py
+Environment=GITHUB_TOKEN_FILE=%h/.github_token
+Environment=GITHUB_REPO=YourUsername/KaMS-Club-Bot
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
