@@ -40,6 +40,52 @@ jobs:
           rm: true
           strip_components: 0
 
+      - name: Update systemd services if changed
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.PI_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            # Check if service files have changed and update them
+            if [ -f ~/KaMS-Club-Bot/ip-updater/ip-updater@.service ]; then
+              echo "Checking for systemd service updates..."
+              
+              # Compare with installed service files
+              SERVICE_CHANGED=false
+              TIMER_CHANGED=false
+              
+              if ! diff -q ~/KaMS-Club-Bot/ip-updater/ip-updater@.service /etc/systemd/system/ip-updater@.service >/dev/null 2>&1; then
+                SERVICE_CHANGED=true
+              fi
+              
+              if ! diff -q ~/KaMS-Club-Bot/ip-updater/ip-updater@.timer /etc/systemd/system/ip-updater@.timer >/dev/null 2>&1; then
+                TIMER_CHANGED=true
+              fi
+              
+              if [ "$SERVICE_CHANGED" = true ] || [ "$TIMER_CHANGED" = true ]; then
+                echo "Service files have changed, updating..."
+                sudo cp ~/KaMS-Club-Bot/ip-updater/ip-updater@.service /etc/systemd/system/
+                sudo cp ~/KaMS-Club-Bot/ip-updater/ip-updater@.timer /etc/systemd/system/
+                sudo systemctl daemon-reload
+                echo "Systemd services updated and reloaded"
+                
+                # Restart the timer if it was running
+                if systemctl is-active --quiet ip-updater@$(whoami).timer; then
+                  sudo systemctl restart ip-updater@$(whoami).timer
+                  echo "IP updater timer restarted"
+                fi
+              else
+                echo "No changes to systemd service files"
+              fi
+              
+              # Clean up - remove service files from Pi (they're now in /etc/systemd/system/)
+              rm -f ~/KaMS-Club-Bot/ip-updater/ip-updater@.service
+              rm -f ~/KaMS-Club-Bot/ip-updater/ip-updater@.timer
+              rm -f ~/KaMS-Club-Bot/ip-updater/setup_ip_updater.sh
+            fi
+
       - name: Check if upgrade script is non-empty
         id: check_script
         run: |
@@ -91,15 +137,6 @@ jobs:
             source venv/bin/activate
             pip install --upgrade pip
             pip install -r <(curl -sL "https://raw.githubusercontent.com/${{ github.repository }}/main/requirements.txt")
-            
-            # Update IP updater systemd service if changed
-            if [ -f "ip-updater/ip-updater@.service" ]; then
-              echo "Updating IP updater service..."
-              sudo cp ip-updater/ip-updater@.service /etc/systemd/system/
-              sudo cp ip-updater/ip-updater@.timer /etc/systemd/system/
-              sudo systemctl daemon-reload
-              echo "IP updater service files updated"
-            fi
             
             export DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}"
             nohup python3.12 src/bot.py >> ./bot.log 2>&1 &
