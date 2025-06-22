@@ -50,7 +50,7 @@ echo "Installing PyNaCl dependency..."
 # Create virtual environment if it doesn't exist
 if [ ! -d "venv" ]; then
     echo "Creating Python virtual environment..."
-    python3 -m venv venv
+    python3.12 -m venv venv
 fi
 
 source venv/bin/activate

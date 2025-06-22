@@ -6,8 +6,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=%i
-WorkingDirectory=%h/KaMS-Club-Bot
-ExecStart=%h/KaMS-Club-Bot/venv/bin/python %h/KaMS-Club-Bot/ip_updater.py
+WorkingDirectory=%h/KaMS-Club-Bot/ip-updater
+ExecStart=%h/KaMS-Club-Bot/venv/bin/python3.12 %h/KaMS-Club-Bot/ip-updater/ip_updater.py
 Environment=GITHUB_TOKEN_FILE=%h/.github_token
 Environment=GITHUB_REPO=YourUsername/KaMS-Club-Bot
 StandardOutput=journal
