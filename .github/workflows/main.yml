@@ -28,17 +28,29 @@ jobs:
             pkill -f "[b]ot.py" || [ $? -eq 1 ]
             while pgrep -f "[b]ot.py" > /dev/null; do sleep 1; done
 
-      - name: Deploy to Raspberry Pi
+      - name: Deploy src directory to Raspberry Pi
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          source: "src/,ip-updater/"
-          target: "~/KaMS-Club-Bot/"
-          overwrite: true
-          strip_components: 0
+          source: "src/"
+          target: "~/KaMS-Club-Bot/src/"
+          rm: true
+          strip_components: 1
+
+      - name: Deploy ip-updater directory to Raspberry Pi
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.PI_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "ip-updater/"
+          target: "~/KaMS-Club-Bot/ip-updater/"
+          rm: true
+          strip_components: 1
 
       - name: Update systemd services if changed
         uses: appleboy/ssh-action@v1.0.3
