@@ -140,12 +140,14 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          # noinspection LongLine
           script: |
+            set -e
             cd ~/KaMS-Club-Bot
+            
             if [ ! -d "venv" ]; then
               python3.12 -m venv venv
             fi
+            
             source venv/bin/activate
             pip install --upgrade pip
             pip install -r <(curl -sL "https://raw.githubusercontent.com/${{ github.repository }}/main/requirements.txt")
