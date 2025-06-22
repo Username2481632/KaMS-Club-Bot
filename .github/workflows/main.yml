@@ -37,7 +37,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           source: "src/,ip-updater/"
           target: "~/KaMS-Club-Bot/"
-          rm: true
+          overwrite: true
           strip_components: 0
 
       - name: Update systemd services if changed
