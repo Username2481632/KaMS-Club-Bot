@@ -35,10 +35,10 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          source: "src/"
-          target: "~/KaMS-Club-Bot/src/"
+          source: "src/,ip-updater/"
+          target: "~/KaMS-Club-Bot/"
           rm: true
-          strip_components: 1
+          strip_components: 0
 
       - name: Check if upgrade script is non-empty
         id: check_script
@@ -91,5 +91,15 @@ jobs:
             source venv/bin/activate
             pip install --upgrade pip
             pip install -r <(curl -sL "https://raw.githubusercontent.com/${{ github.repository }}/main/requirements.txt")
+            
+            # Update IP updater systemd service if changed
+            if [ -f "ip-updater/ip-updater@.service" ]; then
+              echo "Updating IP updater service..."
+              sudo cp ip-updater/ip-updater@.service /etc/systemd/system/
+              sudo cp ip-updater/ip-updater@.timer /etc/systemd/system/
+              sudo systemctl daemon-reload
+              echo "IP updater service files updated"
+            fi
+            
             export DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}"
             nohup python3.12 src/bot.py >> ./bot.log 2>&1 &
