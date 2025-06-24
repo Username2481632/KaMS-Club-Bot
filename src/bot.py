@@ -928,6 +928,15 @@ async def on_ready() -> None:
             # noinspection PyUnresolvedReferences
             await interaction.response.send_message("You cannot vote with a severity of 0.", ephemeral=True)
             return
+        
+        # Check if bot has permission to send messages for non-hidden votes
+        if not hidden and not interaction.channel.permissions_for(interaction.guild.me).send_messages:
+            # noinspection PyUnresolvedReferences
+            await interaction.response.send_message(
+                "Sorry, I'm missing permissions to send messages in this channel. Please contact a server admin or try voting in another channel.",
+                ephemeral=True
+            )
+            return
         async with data_lock:
             data: FullDataType = await load_data()
             if interaction.user.id not in data[interaction.guild.id]:
