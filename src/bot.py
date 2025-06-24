@@ -302,9 +302,13 @@ async def save_data(data: FullDataType, output_file: str = DATA_FILE) -> None:
     :param output_file: Path to the output JSON file.
     """
     try:
-        with open(output_file, "w", encoding="utf-8") as file:
-            json.dump({str(key1): {str(key2): value.to_dict() for key2, value in subdict.items()} for key1, subdict in
-                       data.items()}, file, indent=2)
+        json_data = json.dumps(
+            {str(key1): {str(key2): value.to_dict() for key2, value in subdict.items()}
+             for key1, subdict in data.items()},
+            indent=2
+        )
+        async with aiofiles.open(output_file, 'w', encoding='utf-8') as file:
+            await file.write(json_data)
     except IOError as e:
         logger.error(f"Error saving data: {e}")
 
