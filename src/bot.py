@@ -387,6 +387,9 @@ async def on_message(message: discord.Message, override: bool = False) -> None:
 
     async with data_lock:
         data: FullDataType = await load_data()
+        # Ensure the guild exists in the data
+        if message.guild.id not in data:
+            data[message.guild.id] = {}
         if author_id not in data[message.guild.id]:
             await _on_member_join_impl(message.author, data, message.guild)
 
