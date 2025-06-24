@@ -724,7 +724,7 @@ async def process_messages_in_order(generators: list[AsyncGenerator[discord.Mess
             logger.info("Shutdown requested. Halting missed-message processing.")
             return
 
-        created_at_ts, gen_id, gen, msg = heapq.heappop(heap, key=lambda x: x[0])
+        created_at_ts, gen_id, gen, msg = heapq.heappop(heap)
         await on_message(msg, True)
 
         try:
