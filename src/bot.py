@@ -306,7 +306,7 @@ async def save_data(data: FullDataType, output_file: str = DATA_FILE) -> None:
             json.dump({str(key1): {str(key2): value.to_dict() for key2, value in subdict.items()} for key1, subdict in
                        data.items()}, file, indent=2)
     except IOError as e:
-        print(f"Error saving data: {e}")
+        logger.error(f"Error saving data: {e}")
 
 
 def format_severity(severity: fractions.Fraction) -> str:
