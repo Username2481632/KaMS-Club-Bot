@@ -27,8 +27,8 @@ import traceback
 import typing
 import socket
 import aiohttp
-from types import FrameType
-from typing import Callable, AsyncGenerator
+from types import FrameType, TracebackType
+from typing import Callable, AsyncGenerator, Type
 
 import discord
 import numpy
@@ -1433,7 +1433,7 @@ def signal_handler(sig: int, frame: FrameType | None) -> None:
 signal.signal(signal.SIGTERM, signal_handler)
 
 
-def handle_exception(exc_type, exc_value, exc_traceback):
+def handle_exception(exc_type: Type[BaseException], exc_value: BaseException, exc_traceback: TracebackType | None) -> None:
     """
     Global exception handler that restarts the script on an unhandled exception.
 
