@@ -345,10 +345,15 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
         while True:
             if (disrespectful_role if i else respectful_role) is None:
                 try:
-                    await guild.create_role(name=DISRESPECTFUL_ROLE_NAME if i else RESPECTFUL_ROLE_NAME,
+                    created_role = await guild.create_role(name=DISRESPECTFUL_ROLE_NAME if i else RESPECTFUL_ROLE_NAME,
                                             reason="Created by bot for voting system.")
+                    # Update the appropriate variable
+                    if i:
+                        disrespectful_role = created_role
+                    else:
+                        respectful_role = created_role
                 except discord.Forbidden:
-                    logger.error(f"Missing permissions to create '{DISRESPECTFUL_ROLE_NAME}' role in '{guild.name}'")
+                    logger.error(f"Missing permissions to create '{DISRESPECTFUL_ROLE_NAME if i else RESPECTFUL_ROLE_NAME}' role in '{guild.name}'")
             if i:
                 break
             i = True
