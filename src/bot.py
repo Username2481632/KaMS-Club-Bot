@@ -444,9 +444,13 @@ class JusticeToolboxView(discord.ui.View):
                                                 view=select, ephemeral=True)
 
 
-class SetSlowmodeModal(discord.ui.Modal, title="Set Slowmode for the Current Channel"):
-    length = discord.ui.TextInput(label="Length, seconds", required=True)
-    reset_time = discord.ui.TextInput(label="Reset Time, minutes (optional)", required=False)
+class SetSlowmodeModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Set Slowmode for the Current Channel")
+        self.length = discord.ui.TextInput(label="Length, seconds", required=True)
+        self.reset_time = discord.ui.TextInput(label="Reset Time, minutes (optional)", required=False)
+        self.add_item(self.length)
+        self.add_item(self.reset_time)
 
     async def on_submit(self, interaction: discord.Interaction):
         # Validate input for length
