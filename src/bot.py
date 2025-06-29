@@ -160,11 +160,11 @@ class GuildConfig:
     Class to represent the configuration of a guild.
     """
 
-    def __init__(self, wd: str = "", pp: bool = False, l: LoggerConfig = LoggerConfig(),
+    def __init__(self, wd: str = "", pp: bool = False, lc: LoggerConfig = LoggerConfig(),
                  rr: list[list[int]] | None = None) -> None:
         self.welcome_dm = wd
         self.purge_polls = pp
-        self.logger = l
+        self.logger = lc
         self.required_roles = [set(roles) for roles in rr] if rr is not None else []
 
     def to_dict(self) -> GuildConfigDictType:
@@ -183,7 +183,7 @@ class GuildConfig:
         :return:
         """
         return cls(wd=param.get("welcome_dm", ""), pp=param.get("purge_polls", False),
-                   l=LoggerConfig.from_dict(param.get("logger", {})), rr=param.get("required_roles", []))
+                   lc=LoggerConfig.from_dict(param.get("logger", {})), rr=param.get("required_roles", []))
 
 
 class MemberEntry:
@@ -369,7 +369,7 @@ async def set_respect_role(guild: discord.Guild, member: discord.Member, score: 
             await member.add_roles(respectful_role, reason=f"Respect score of {score} is positive.")
             logger.info(f"{member.display_name} has been upgraded to '{RESPECTFUL_ROLE_NAME}'.")
     elif disrespectful_role not in member.roles and respectful_role not in member.roles:
-        await member.add_roles(disrespectful_role, reason=f"Bad respect score.")
+        await member.add_roles(disrespectful_role, reason="Bad respect score.")
         logger.info(
             f"{member.display_name} has been assigned '{DISRESPECTFUL_ROLE_NAME}' because their roles were missing and their respect score is negative.")
     elif score < min(-1.0, -0.01 * sum(not memb.bot for memb in guild.members)):
