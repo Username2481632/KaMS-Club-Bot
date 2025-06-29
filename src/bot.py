@@ -1237,16 +1237,16 @@ async def day_change() -> None:
                         await _on_member_join_impl(member, data, guild)
             for member_id in data[guild.id]:
                 if data[guild.id][member_id].shallow_score > 0:
-                    data[guild.id][member_id].deep_score += math.sqrt(data[guild.id][member_id].shallow_score) / (
-                            member_count ** (1 / 3))
-                    data[guild.id][member_id].shallow_score = 0.0
+                    data[guild.id][member_id].deep_score += fractions.Fraction(math.sqrt(data[guild.id][member_id].shallow_score)) / (
+                            member_count ** (fractions.Fraction(1, 3)))
+                    data[guild.id][member_id].shallow_score = fractions.Fraction(0)
                 elif data[guild.id][member_id].shallow_score < 0:
                     data[guild.id][member_id].deep_score += data[guild.id][member_id].shallow_score
-                    data[guild.id][member_id].shallow_score /= 4.0
-                    if data[guild.id][member_id].shallow_score > -0.01:
-                        data[guild.id][member_id].shallow_score = 0.0
-                elif data[guild.id][member_id].deep_score > 0.1:
-                    data[guild.id][member_id].deep_score -= 0.0078125  # 1/28
+                    data[guild.id][member_id].shallow_score /= fractions.Fraction(4, 1)
+                    if data[guild.id][member_id].shallow_score > fractions.Fraction(-1, 100):
+                        data[guild.id][member_id].shallow_score = fractions.Fraction(0)
+                elif data[guild.id][member_id].deep_score > fractions.Fraction(1, 10):
+                    data[guild.id][member_id].deep_score -= fractions.Fraction(1, 128)
 
                 # Apply credibility decay
                 data[guild.id][member_id].credibility = max(fractions.Fraction(0),
