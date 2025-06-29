@@ -497,7 +497,7 @@ class SetSlowmodeModal(discord.ui.Modal):
                 f"{ERROR_SYMBOL} I do not have permission to set slowmode in this channel.")
 
 
-BanRequestType = dict[str, bool | str]  # {"request", "reason"}
+BanRequestType = dict[str, bool | str]  # {"request": bool, "reason": str}
 BanRequestsType = dict[int, dict[int, dict[int, BanRequestType]]]  # {server_id: {user_id: {requester_id: BanRequest}}}
 
 
