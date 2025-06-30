@@ -1266,7 +1266,7 @@ async def _smart_timeout(
                 ):
                     can_update = (
                         entry.user.id == member.guild.me.id
-                        or duration and duration > current_duration
+                        or duration is not None and duration > current_duration
                     )
                     break
         except discord.errors.Forbidden:
