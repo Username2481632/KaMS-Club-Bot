@@ -7,7 +7,7 @@ Due to a Discord limitation, you must restrict the /justice_toolbox command visi
 Generating Discord OAuth2 Link:
 - Scopes: applications.commands, bot
 - Bot Permissions:
-  - General: Manage Roles, Manage Channels, Ban Members, Change Nickname, Moderate Members
+  - General: View Audit Log, Manage Roles, Manage Channels, Ban Members, Change Nickname, Moderate Members
   - Text: Send Messages, Send Messages in Threads, Manage Messages, Read Message History
   - Voice: None required.
 """
@@ -61,7 +61,7 @@ TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0,
                                                 -4.0: 10080.0}  # Score: Timeout duration (minutes)
 MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
     f"Hi there. It seems like you're missing some roles, which is why {'you\'ve been temporarily timed out' if not timed_out else 'your disrespect timeout has been put on hold and will stop decreasing'}. No worries, "
-    f"though! To {'regain access to the server' if not timed_out else 'keep serving your disrespect timeout until it\'s done'}, just visit the <id:customize> tab to assign yourself the necessary roles. If you have any "
+    f"though! To {'regain access to the server' if not timed_out else 'keep serving your existing timeout until it\'s done'}, just visit the <id:customize> tab to assign yourself the necessary roles. If you have any "
     f"questions or need assistance, feel free to reach out to a moderator. We're here to help!")
 ROLE_RESTORATION_MESSAGE = "You have been untimed out due to acquiring the necessary roles. Welcome back!"
 LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -996,24 +996,20 @@ async def on_ready() -> None:
                         old_duration = target_member.timed_out_until - discord.utils.utcnow()
                     new_duration: datetime.timedelta = datetime.timedelta(minutes=timeout_minutes)
                     if (fraction_severity < 0 or new_duration < old_duration) and new_duration != old_duration:
-                        until: datetime.datetime = discord.utils.utcnow() + new_duration
                         if data[interaction.guild.id][target_member.id].suspended_timeout is not None:
                             data[interaction.guild.id][
                                 target_member.id].suspended_timeout = new_duration.total_seconds()
                         else:
-                            try:
-                                await target_member.edit(timed_out_until=until,
-                                                         reason=f"Voted {fraction_severity} by a member.")
-                                logger.info(
-                                    f"{target_member.display_name} has been timed out for {timeout_minutes} minutes.")
-                                if old_duration < TIMEOUT_NOTIFICATION_THRESHOLD < new_duration:
-                                    await dm_member(target_member,
-                                                    f"You have been timed out for {timeout_minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out "
-                                                    f"to a "
-                                                    f"moderator.")
-                            except discord.errors.Forbidden:
-                                logger.error(
-                                    f"Forbidden to timeout user \"{target_member.display_name}\" (id={target_member.id}).")
+                            await _smart_timeout(
+                                target_member,
+                                new_duration,
+                                f"Voted {fraction_severity} by a member.",
+                                f"You have been timed out for {timeout_minutes} minutes due to your low respect score. Please take this time to reflect on your behavior. If you have any questions, feel free to reach out to a moderator."
+                                if old_duration
+                                < TIMEOUT_NOTIFICATION_THRESHOLD
+                                < new_duration
+                                else None,
+                            )
             await save_data(data)
 
             formatted_severity: str = format_severity(fraction_severity)
@@ -1222,6 +1218,64 @@ for logger_name in ("discord.client", "discord.gateway", "discord.http", "discor
     logging.getLogger(logger_name).addFilter(DiscordConnectionErrorFilter())
 
 
+async def _smart_timeout(
+    member: discord.Member,
+    duration: datetime.timedelta | None,
+    reason: str,
+    message: str | None,
+) -> bool:
+    """
+    Apply a smart timeout that respects other moderators' decisions
+
+    :param member: The member to apply the timeout to.
+    :param duration: The timedelta object representing the new timeout duration.
+    :param reason: The reason for the timeout.
+    :param message: An optional message to send to the user if the timeout is applied.
+    """
+    current_duration: datetime.timedelta = (
+        member.timed_out_until - discord.utils.utcnow()
+        if member.timed_out_until
+        else datetime.timedelta()
+    )
+
+    can_update: bool = True
+    if current_duration > datetime.timedelta():
+        try:
+            async for entry in member.guild.audit_logs(
+                limit=None,
+                oldest_first=False,
+                action=discord.AuditLogAction.member_update,
+            ):
+                if (
+                    entry.target.id == member.id
+                    and any(
+                        change.key == "communication_disabled_until"
+                        for change in entry.changes
+                    )
+                ):
+                    can_update = (
+                        entry.user.id == member.guild.me.id
+                        or duration and duration > current_duration
+                    )
+                    break
+        except discord.errors.Forbidden:
+            logger.warning(
+                f'Unable to preserve moderator-issued timeouts — missing audit log permissions in server "{member.guild.name}" (id={member.guild.id})'
+            )
+
+    if can_update:
+        try:
+            await member.timeout(duration, reason=reason)
+            if message is not None:
+                await dm_member(member, message)
+            return True
+        except discord.errors.Forbidden:
+            logger.warning(
+                f"Forbidden to set timeout for member \"{member.display_name}\" (id={member.id}, server={member.guild.id})."
+            )
+    return False
+
+
 @tasks.loop(time=DAY_CHANGE_TIME)
 async def day_change() -> None:
     """
@@ -1281,22 +1335,33 @@ async def day_change() -> None:
                 # Timeout members that are missing required roles
                 if member is not None and not member.bot:
                     member_role_ids: set[int] = set(rl.id for rl in member.roles)
-                    if not all(member_role_ids & role_category for role_category in
-                               GUILDS[member.guild.id].required_roles):
-                        try:
-                            was_timed_out: bool = member.timed_out_until is not None and member.timed_out_until > discord.utils.utcnow()
-                            await member.timeout(MISSING_ROLE_TIMEOUT_DURATION, reason="Missing required roles.")
-                            if data[guild.id][member_id].suspended_timeout is None:
-                                data[guild.id][member_id].suspended_timeout = 0.0 if not was_timed_out else max(0.0, (
-                                        member.timed_out_until - discord.utils.utcnow()).total_seconds())
-                                await dm_member(member, MISSING_ROLE_MESSAGE(was_timed_out))
-                                logger.info(
-                                    f"{member.display_name} (id={member_id}) has been timed out for {MISSING_ROLE_TIMEOUT_DURATION.total_seconds() / 86400.0} days due to missing required roles.")
-                            else:
-                                log_deletions.append(member_id)
-                        except discord.errors.Forbidden:
-                            logger.error(
-                                f"Forbidden to timeout user \"{member.display_name}\" (id={member_id}) for missing required roles.")
+                    if not all(
+                        member_role_ids & role_category
+                        for role_category in GUILDS[member.guild.id].required_roles
+                    ):
+                        now = discord.utils.utcnow()
+                        original_timeout_seconds: float = (
+                            (member.timed_out_until - now).total_seconds()
+                            if member.timed_out_until is not None and member.timed_out_until > now
+                            else 0.0
+                        )
+                        was_timed_out: bool = original_timeout_seconds > TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds()
+
+                        if data[guild.id][member_id].suspended_timeout is None:
+                            if await _smart_timeout(
+                                member,
+                                MISSING_ROLE_TIMEOUT_DURATION,
+                                ROLE_TIMEOUT_REASON,
+                                MISSING_ROLE_MESSAGE(was_timed_out),
+                            ):
+                                data[guild.id][member_id].suspended_timeout = original_timeout_seconds
+                        elif await _smart_timeout(
+                            member,
+                            MISSING_ROLE_TIMEOUT_DURATION,
+                            ROLE_TIMEOUT_REASON,
+                            None,
+                        ):
+                            log_deletions.append(member_id)
 
             await save_data(data)
 
@@ -1385,27 +1450,10 @@ async def on_member_update(before: discord.Member, after: discord.Member):
             if after.id not in data[after.guild.id]:
                 await _on_member_join_impl(after, data, after.guild)
             if data[after.guild.id][after.id].suspended_timeout is not None:
-                try:
-                    if data[after.guild.id][after.id].suspended_timeout > 0.0:
-                        await after.timeout(
-                            datetime.timedelta(seconds=data[after.guild.id][after.id].suspended_timeout),
-                            reason="Resume timeout from before role-acquisition obligation.")
-                    else:
-                        await after.timeout(None, reason="Acquired necessary roles.")
-                except discord.errors.Forbidden:
-                    logger.error(
-                        f"Forbidden to untimeout user \"{after.display_name}\" (id={after.id}) for role acquisition.")
-                    return
-                logger.info(
-                    f"{after.display_name} (id={after.id}) has been untimed out due to acquiring the necessary roles.")
-                if after.timed_out_until is not None and (
-                        after.timed_out_until - discord.utils.utcnow()) > TIMEOUT_NOTIFICATION_THRESHOLD:
-                    logger.info(
-                        f"{after.display_name} (id={after.id}) still has a respect timeout of {float(data[after.guild.id][after.id].suspended_timeout / fractions.Fraction(60)):.5f} minutes to serve.")
-                    await dm_member(after,
-                                    f"Your role timeout has been removed, but you still have a timeout of {datetime.timedelta(seconds=int(data[after.guild.id][after.id].suspended_timeout))} to serve.")
+                if data[after.guild.id][after.id].suspended_timeout > 0.0:
+                    await _smart_timeout(after, datetime.timedelta(seconds=data[after.guild.id][after.id].suspended_timeout), "Resume timeout from before role-acquisition obligation.", f"Your role timeout has been removed, but you still have a timeout of {datetime.timedelta(seconds=int(data[after.guild.id][after.id].suspended_timeout))} to serve.")
                 else:
-                    await dm_member(after, ROLE_RESTORATION_MESSAGE)
+                    await _smart_timeout(after, None, "Acquired necessary roles.", ROLE_RESTORATION_MESSAGE)
                 data[after.guild.id][after.id].suspended_timeout = None
                 await save_data(data)
 
