@@ -88,37 +88,6 @@ load_dotenv()
 # Load the token from an environment variable
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 
-# ===================================================GLOBAL VARIABLES===================================================
-intents = discord.Intents.default()
-intents.members = True
-intents.message_content = True
-intents.guilds = True
-bot = commands.Bot(command_prefix='', intents=intents)
-# Configure logging, excluding discord logs
-logger = logging.getLogger('kams-bot')
-logger.setLevel(logging.INFO)
-# Create handlers
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-# Create formatters and add it to handlers
-formatter = logging.Formatter(LOGGING_FORMAT)
-console_handler.setFormatter(formatter)
-logger.addHandler(console_handler)
-guild_objects: list[discord.Guild] = []
-is_initialized = False
-# Extract x and y coordinates from the dictionary
-x_coords: numpy.ndarray = numpy.array(list(TIMEOUT_DURATION_OUTLINE.keys()))
-y_coords: numpy.ndarray = numpy.array(list(TIMEOUT_DURATION_OUTLINE.values()))
-# Create a linear interpolation function
-linear_interp = interp1d(x_coords, y_coords, fill_value='extrapolate')  # linear interpolation
-# Generate points to plot the function
-x_values: numpy.ndarray = numpy.linspace(min(x_coords), max(x_coords), 500)
-y_values: numpy.ndarray = linear_interp(x_values)
-shutdown_event = asyncio.Event()
-# Initialize a lock for thread-safe file access
-data_lock = asyncio.Lock()
-
-
 # ========================================================TYPES=========================================================
 class LoggerConfig:
     """
@@ -250,6 +219,40 @@ class MemberEntry:
 ServerDataType = dict[int, MemberEntry]
 FullDataType = dict[int, ServerDataType]
 
+GuildsType = dict[int, GuildConfig]
+
+# ===================================================GLOBAL VARIABLES===================================================
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+intents.guilds = True
+bot = commands.Bot(command_prefix='', intents=intents)
+# Configure logging, excluding discord logs
+logger = logging.getLogger('kams-bot')
+logger.setLevel(logging.INFO)
+# Create handlers
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+# Create formatters and add it to handlers
+formatter = logging.Formatter(LOGGING_FORMAT)
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+guild_objects: list[discord.Guild] = []
+is_initialized = False
+# Extract x and y coordinates from the dictionary
+x_coords: numpy.ndarray = numpy.array(list(TIMEOUT_DURATION_OUTLINE.keys()))
+y_coords: numpy.ndarray = numpy.array(list(TIMEOUT_DURATION_OUTLINE.values()))
+# Create a linear interpolation function
+linear_interp = interp1d(x_coords, y_coords, fill_value='extrapolate')  # linear interpolation
+# Generate points to plot the function
+x_values: numpy.ndarray = numpy.linspace(min(x_coords), max(x_coords), 500)
+y_values: numpy.ndarray = linear_interp(x_values)
+shutdown_event = asyncio.Event()
+# Initialize a lock for thread-safe file access
+data_lock = asyncio.Lock()
+
+# Global guild configurations - will be initialized during bot startup
+GUILDS: GuildsType = {}
 
 # ===================================================UTILITY FUNCTIONS==================================================
 # Function to evaluate the linear interpolation at any given x
@@ -781,9 +784,8 @@ async def on_ready() -> None:
     default_logger_config: dict = LoggerConfig().to_dict()
     expected_logger_keys: set[str] = set(default_logger_config.keys())
 
-    # noinspection PyGlobalUndefined
-    global GUILDS
-    GUILDS = {}
+
+    guilds: GuildsType = {}
 
     for g_id_str, g_cfg in config_data.items():
         # Validate guild ID format
@@ -853,23 +855,26 @@ async def on_ready() -> None:
 
         # Create validated config
         try:
-            GUILDS[g_id] = GuildConfig.from_dict({**default_guild_config,  # Start with defaults
+            guilds[g_id] = GuildConfig.from_dict({**default_guild_config,  # Start with defaults
                                                   **g_cfg,  # Override with config values
                                                   'required_roles': valid_roles})
         except Exception as e:
             logger.error(f"{guild_label}: Failed to create config - {str(e)}.")
 
     # Final guild verification
-    for g_id in list(GUILDS.keys()):
+    for g_id in list(guilds.keys()):
         guild: discord.Guild | None = bot.get_guild(g_id)
         if not guild:
             logger.error(f"Configured guild id={g_id} not found - bot not in server. Removing from config.")
-            del GUILDS[g_id]
+            del guilds[g_id]
 
-    if not GUILDS:
+    if not guilds:
         logger.error("No valid guild configurations found.")
         await shutdown()
         return
+
+    # Atomically set GUILDS after all validation succeeds
+    GUILDS = guilds
 
     # Initialize guild objects
     guild_objects = [bot.get_guild(g_id) for g_id in GUILDS.keys()]
