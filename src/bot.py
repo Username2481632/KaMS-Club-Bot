@@ -119,7 +119,7 @@ class GuildConfigDictType(typing.TypedDict):
     """
     TypedDict for the guild configuration.
     """
-    welcome_dm: str
+    welcome_dm: str | None
     purge_polls: bool
     logger: LoggerConfig
     required_roles: list[list[int]]
@@ -1146,8 +1146,19 @@ async def _on_member_join_impl(member: discord.Member | discord.User, data: Full
 
     await set_respect_role(guild, member,
                            data[guild.id][member.id].shallow_score + data[guild.id][member.id].deep_score)
+    
+    # Construct the appropriate message based on the situation
+    welcome_status: str
+    if message_sent:
+        welcome_status = "welcomed to the server"
+    else:
+        welcome_status = "recognized as a new server member"
+        if welcome_dm:
+            welcome_status += " (no message was sent because this isn't their first time)"
+
+    
     logger.info(
-        f"{member.display_name} has been welcomed to the server {"(no message was sent because this isn't their first time) " if not message_sent and welcome_dm else ""}and their roles have been set.")
+        f"{member.display_name} has been {welcome_status} and their roles have been set.")
 
 
 async def set_justice_role(member: discord.Member, justice_ids: list[int]) -> None:
