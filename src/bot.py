@@ -26,6 +26,7 @@ import time
 import traceback
 import typing
 import socket
+import aiofiles
 import aiohttp
 from types import FrameType, TracebackType
 from typing import Callable, AsyncGenerator, Type
