@@ -59,11 +59,15 @@ TIMEOUT_DURATION_OUTLINE: dict[float, float] = {1.0: 0.0, 0.0: 0.0,
                                                 TIMEOUT_THRESHOLD: TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds() / 60.0,
                                                 -1.0: 20.0, -2.0: 300.0, -3.0: 10080.0,
                                                 -4.0: 10080.0}  # Score: Timeout duration (minutes)
-MISSING_ROLE_MESSAGE: Callable[[bool], str] = lambda timed_out: (
-    f"Hi there. It seems like you're missing some roles, which is why {'you\'ve been temporarily timed out' if not timed_out else 'your disrespect timeout has been put on hold and will stop decreasing'}. No worries, "
+MISSING_ROLE_MESSAGE: Callable[[bool, str], str] = lambda timed_out, server_name: (
+    f"Hi there. It seems like you're missing some roles in **{server_name}**, which is why {'you\'ve been temporarily timed out' if not timed_out else 'your disrespect timeout has been put on hold and will stop decreasing'}. No worries, "
     f"though! To {'regain access to the server' if not timed_out else 'keep serving your existing timeout until it\'s done'}, just visit the <id:customize> tab to assign yourself the necessary roles. If you have any "
     f"questions or need assistance, feel free to reach out to a moderator. We're here to help!")
-ROLE_RESTORATION_MESSAGE = "You have been untimed out due to acquiring the necessary roles. Welcome back!"
+def ROLE_RESTORATION_MESSAGE(server_name: str) -> str:
+    return f"Thanks for acquiring the necessary roles in **{server_name}**. Your timeout has been removed; welcome back!"
+def TIMEOUT_RESUME_MESSAGE(server_name: str, remaining_timeout: datetime.timedelta) -> str:
+    hours: float = math.ceil(remaining_timeout.seconds / 360.0) / 10.0
+    return f"Your role timeout in **{server_name}** has been removed, but you still have an earlier timeout of {f"{remaining_timeout.days} day{"" if remaining_timeout.days == 1 else "s"}" if remaining_timeout.days > 0 else ""} and {hours} hour{"" if hours == 1 else "s"} to serve."
 LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 MISSING_ROLE_TIMEOUT_DURATION: datetime.timedelta = datetime.timedelta(days=2)
 JUSTICE_DEEP_SCORE_REQUIREMENT: fractions.Fraction = fractions.Fraction(3, 2)
@@ -1363,7 +1367,7 @@ async def day_change() -> None:
                                 member,
                                 MISSING_ROLE_TIMEOUT_DURATION,
                                 ROLE_TIMEOUT_REASON,
-                                MISSING_ROLE_MESSAGE(was_timed_out),
+                                MISSING_ROLE_MESSAGE(was_timed_out, guild.name),
                             ):
                                 data[guild.id][member_id].suspended_timeout = original_timeout_seconds
                         elif await _smart_timeout(
@@ -1462,9 +1466,10 @@ async def on_member_update(before: discord.Member, after: discord.Member):
                 await _on_member_join_impl(after, data, after.guild)
             if data[after.guild.id][after.id].suspended_timeout is not None:
                 if data[after.guild.id][after.id].suspended_timeout > 0.0:
-                    await _smart_timeout(after, datetime.timedelta(seconds=data[after.guild.id][after.id].suspended_timeout), "Resume timeout from before role-acquisition obligation.", f"Your role timeout has been removed, but you still have a timeout of {datetime.timedelta(seconds=int(data[after.guild.id][after.id].suspended_timeout))} to serve.")
+                    duration = datetime.timedelta(seconds=data[after.guild.id][after.id].suspended_timeout)
+                    await _smart_timeout(after, duration, "Resume timeout from before role-acquisition obligation.", TIMEOUT_RESUME_MESSAGE(after.guild.name, duration))
                 else:
-                    await _smart_timeout(after, None, "Acquired necessary roles.", ROLE_RESTORATION_MESSAGE)
+                    await _smart_timeout(after, None, "Acquired necessary roles.", ROLE_RESTORATION_MESSAGE(after.guild.name))
                 data[after.guild.id][after.id].suspended_timeout = None
                 await save_data(data)
 
