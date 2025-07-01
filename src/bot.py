@@ -1308,16 +1308,19 @@ async def day_change() -> None:
 
         for guild in guild_objects:
             assert guild is not None
-            member_count: int = 0
+
+            # Create a snapshot of the member list to prevent race conditions
+            members: list[discord.Member] = []
+
             for member in guild.members:
                 if not member.bot:
-                    member_count += 1
+                    members.append(member)
                     if member.id not in data[guild.id]:
                         await _on_member_join_impl(member, data, guild)
             for member_id in data[guild.id]:
                 if data[guild.id][member_id].shallow_score > 0:
                     data[guild.id][member_id].deep_score += fractions.Fraction(math.sqrt(data[guild.id][member_id].shallow_score)) / (
-                            member_count ** (fractions.Fraction(1, 3)))
+                            len(members) ** (fractions.Fraction(1, 3)))
                     data[guild.id][member_id].shallow_score = fractions.Fraction(0)
                 elif data[guild.id][member_id].shallow_score < 0:
                     data[guild.id][member_id].deep_score += data[guild.id][member_id].shallow_score
@@ -1335,7 +1338,7 @@ async def day_change() -> None:
             # Calculate justices
             justices: list[discord.Member] = []
             if len(data[guild.id].keys()) >= JUSTICE_COUNT * 5:
-                justices = sorted(guild.members, key=lambda memb: justice_score(data[guild.id], memb), reverse=True)[
+                justices = sorted(members, key=lambda memb: justice_score(data[guild.id], memb), reverse=True)[
                            :JUSTICE_COUNT]
                 if data[guild.id][justices[-1].id].deep_score <= JUSTICE_DEEP_SCORE_REQUIREMENT:
                     justices = []
