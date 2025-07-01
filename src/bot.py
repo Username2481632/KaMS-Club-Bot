@@ -1457,7 +1457,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
     :param after:
     :return:
     """
-    if before.roles == after.roles:
+    if before.roles == after.roles or after.guild.id not in GUILDS:
         return
     if not all(set(rl.id for rl in before.roles) & role_category for role_category in
                GUILDS[before.guild.id].required_roles) and all(
