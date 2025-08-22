@@ -765,7 +765,7 @@ async def on_ready() -> None:
     """
     Event that runs when the bot is ready, syncing the commands and starting the day_change loop.
     """
-    global is_initialized, guild_objects
+    global is_initialized, guild_objects, GUILDS
     if is_initialized:
         return
 
@@ -878,7 +878,9 @@ async def on_ready() -> None:
         return
 
     # Atomically set GUILDS after all validation succeeds
-    GUILDS = guilds
+    # Mutate existing GUILDS so a missing name raises instead of silently creating a local.
+    GUILDS.clear()
+    GUILDS.update(guilds)
 
     # Initialize guild objects
     guild_objects = [bot.get_guild(g_id) for g_id in GUILDS.keys()]
