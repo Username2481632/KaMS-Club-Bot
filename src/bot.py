@@ -38,14 +38,18 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from scipy.interpolate import interp1d
 
-# ===================================================INITIALIZATION=====================================================
+# -----------------------------------------------------------------------------
+# Initialization
+# -----------------------------------------------------------------------------
 # Set the timezone to UTC
 os.environ["TZ"] = "UTC"
 time.tzset()
 # Ensure working directory is the same as the script's directory. This is crucial for relative paths to work correctly.
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-# ======================================================PARAMETERS======================================================
+# -----------------------------------------------------------------------------
+# Parameters
+# -----------------------------------------------------------------------------
 CONFIG_FILE: str = "../config.json"
 DATA_FILE: str = "../data.json"
 JUSTICE_COUNT: int = 5
@@ -117,7 +121,9 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
 
-# ========================================================TYPES=========================================================
+# -----------------------------------------------------------------------------
+# Types
+# -----------------------------------------------------------------------------
 class LoggerConfig:
     """
     Class to represent the configuration of a logger.
@@ -284,7 +290,9 @@ FullDataType = dict[int, ServerDataType]
 
 GuildsType = dict[int, GuildConfig]
 
-# ===================================================GLOBAL VARIABLES===================================================
+# -----------------------------------------------------------------------------
+# Global variables
+# -----------------------------------------------------------------------------
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -320,7 +328,11 @@ data_lock = asyncio.Lock()
 GUILDS: GuildsType = {}
 
 
-# ===================================================UTILITY FUNCTIONS==================================================
+# -----------------------------------------------------------------------------
+# Utility functions
+# -----------------------------------------------------------------------------
+
+
 # Function to evaluate the linear interpolation at any given x
 def calculate_timeout(x: fractions.Fraction) -> float:
     """
@@ -413,6 +425,11 @@ def format_severity(severity: fractions.Fraction) -> str:
         )
 
 
+# -----------------------------------------------------------------------------
+# Main logic functions
+# -----------------------------------------------------------------------------
+
+
 async def set_respect_role(
     guild: discord.Guild, member: discord.Member, score: fractions.Fraction
 ) -> None:
@@ -485,6 +502,11 @@ async def set_respect_role(
                 )
 
 
+# -----------------------------------------------------------------------------
+# Event listeners
+# -----------------------------------------------------------------------------
+
+
 @bot.event
 async def on_message(message: discord.Message, override: bool = False) -> None:
     """
@@ -533,6 +555,11 @@ async def on_message(message: discord.Message, override: bool = False) -> None:
 
         data[message.guild.id][author_id].latest_message_time = message_timestamp
         await save_data(data)
+
+
+# -----------------------------------------------------------------------------
+# Justice toolbox
+# -----------------------------------------------------------------------------
 
 
 class JusticeToolboxView(discord.ui.View):
@@ -971,6 +998,11 @@ async def process_messages_in_order(
             pass
         except Exception as e:
             logger.error(f"Error retrieving next message: {e}")
+
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
 
 
 @bot.event
