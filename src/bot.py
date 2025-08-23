@@ -22,16 +22,16 @@ import math
 import os
 import shutil
 import signal
+import socket
 import sys
 import time
 import traceback
 import typing
-import socket
+from types import FrameType, TracebackType
+from typing import AsyncGenerator, Callable, Type
+
 import aiofiles
 import aiohttp
-from types import FrameType, TracebackType
-from typing import Callable, AsyncGenerator, Type
-
 import discord
 import numpy
 from discord.ext import commands, tasks
@@ -1811,9 +1811,11 @@ async def day_change() -> None:
             previous_justice_ids: set[int] = set()
             if justice_channel is None:
                 bot_role: discord.Role | None = discord.utils.get(
-                    guild.roles, name="Casey"
+                    guild.roles, name=bot.user.name
                 )
-                assert bot_role is not None
+                assert bot_role is not None, (
+                    f"Role with bot name '{bot.user.name}' not found in guild '{guild.name}'."
+                )
                 justice_channel = await justice_channel_category.create_text_channel(
                     JUSTICE_CHANNEL_NAME,
                     overwrites={
