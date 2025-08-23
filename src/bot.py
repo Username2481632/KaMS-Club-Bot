@@ -425,6 +425,29 @@ def format_severity(severity: fractions.Fraction) -> str:
         )
 
 
+async def get_justice_role(guild: discord.Guild) -> discord.Role:
+    """
+    Returns the Justice role in the given guild, creating one if it doesn't exist.
+
+    :param guild: The guild to get the role from.
+    :return: The Justice role.
+    """
+    justice_role: discord.Role | None = discord.utils.get(
+        guild.roles, name=JUSTICE_ROLE_NAME
+    )
+    if not justice_role:
+        logger.warning(f"Justice role missing in guild '{guild.name}'")
+        justice_role = await guild.create_role(
+            name=JUSTICE_ROLE_NAME,
+            hoist=True,
+            reason="Created by bot to keep track of justices.",
+        )
+        logger.info(
+            f"Created blank justice role (id={justice_role.id})—IT IS ADVISABLE TO CUSTOMIZE IT WITH PERMISSIONS AND DISPLAY OPTIONS (this will only be shown once)."
+        )
+    return justice_role
+
+
 # -----------------------------------------------------------------------------
 # Main logic functions
 # -----------------------------------------------------------------------------
@@ -1169,14 +1192,7 @@ async def on_ready() -> None:
         Access the Justice Toolbox.
         :param interaction:
         """
-        justice_role: discord.Role | None = discord.utils.get(
-            interaction.guild.roles, name=JUSTICE_ROLE_NAME
-        )
-        if justice_role is None:
-            logger.error(
-                "The 'Justice' role does not exist in the guild. Error accessing it for the Justice Toolbox."
-            )
-            return
+        justice_role: discord.Role = await get_justice_role(interaction.guild)
         if justice_role not in interaction.user.roles:
             # noinspection PyUnresolvedReferences
             await interaction.response.send_message(
@@ -1569,14 +1585,7 @@ async def set_justice_role(member: discord.Member, justice_ids: list[int]) -> No
     :return:
     """
     # If the Justice role does not exist, log the error and timestamp then return
-    justice_role: discord.Role | None = discord.utils.get(
-        member.guild.roles, name=JUSTICE_ROLE_NAME
-    )
-    if justice_role is None:
-        logger.error(
-            f"The 'Justice' role does not exist in guild \"{member.guild.name}\"."
-        )
-        return
+    justice_role: discord.Role = await get_justice_role(member.guild)
     if member.id in justice_ids and not any(
         role.name == JUSTICE_ROLE_NAME for role in member.roles
     ):
