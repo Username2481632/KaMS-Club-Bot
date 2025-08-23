@@ -939,7 +939,7 @@ async def message_generator(
                 return
             yield message
     except discord.Forbidden:
-        logger.warning(
+        logger.info(
             f"No permission to read history in channel {channel.name} ({channel.id})"
         )
     except discord.HTTPException as e:
