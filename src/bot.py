@@ -1932,6 +1932,8 @@ async def day_change() -> None:
             logger.info(
                 f"Deleted {len(deleted)} role timeout prolongation logs from the logger channel."
             )
+        else:
+            logger.warning(f"Unable to access logger channel `#{GUILDS[guild.id].logger.channel_name}` in guild {guild.name} (id={guild.id}).")
     logger.info("Full day change complete.")
 
 
