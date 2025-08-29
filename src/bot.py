@@ -2063,6 +2063,11 @@ async def on_guild_join(guild: discord.Guild) -> None:
     :param guild:
     """
     await update_bot_nickname(guild)
+    if guild.id not in GUILDS:
+        logger.info(
+            f"Joined new guild—add it to {CONFIG_FILE} if you want the bot to work here.",
+            guild_id=guild.id,
+        )
 
 
 async def shutdown() -> None:
