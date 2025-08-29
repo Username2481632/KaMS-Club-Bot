@@ -299,7 +299,7 @@ intents.message_content = True
 intents.guilds = True
 bot = commands.Bot(command_prefix="", intents=intents)
 # Configure logging, excluding discord logs
-logger = logging.getLogger("kams-bot")
+logger = logging.getLogger("casey")
 logger.setLevel(logging.INFO)
 # Create handlers
 console_handler = logging.StreamHandler()
@@ -308,6 +308,29 @@ console_handler.setLevel(logging.INFO)
 formatter = logging.Formatter(LOGGING_FORMAT)
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
+
+
+class GuildLoggerAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        try:
+            guild_id = kwargs.pop("guild_id")
+        except KeyError:
+            raise ValueError("guild_id is required; pass None to omit")
+
+        # Append guild id to logger name dynamically
+        record_name = self.logger.name
+        if guild_id is not None:
+            record_name = f"{record_name} - {guild_id}"
+
+        if "extra" not in kwargs:
+            kwargs["extra"] = {}
+        kwargs["extra"]["name"] = record_name
+
+        return msg, kwargs
+
+
+logger = GuildLoggerAdapter(logger, {})
+
 guild_objects: list[discord.Guild] = []
 is_initialized = False
 # Extract x and y coordinates from the dictionary
@@ -355,11 +378,11 @@ async def update_bot_nickname(guild: discord.Guild) -> None:
 
     try:
         await guild.me.edit(nick=expected_nick)
-        logger.info(f"Updated nickname to '{expected_nick}' in '{guild.name}'")
+        logger.info(f"Updated nickname to '{expected_nick}'", guild_id=guild.id)
     except discord.Forbidden:
-        logger.error(f"Missing permissions to set nickname in '{guild.name}'")
+        logger.error("Missing permissions to set nickname", guild_id=guild.id)
     except Exception as e:
-        logger.error(f"Error setting nickname in '{guild.name}': {e}")
+        logger.error(f"Error setting nickname: {e}", guild_id=guild.id)
 
 
 async def load_data() -> FullDataType:
@@ -436,14 +459,15 @@ async def get_justice_role(guild: discord.Guild) -> discord.Role:
         guild.roles, name=JUSTICE_ROLE_NAME
     )
     if not justice_role:
-        logger.warning(f"Justice role missing in guild '{guild.name}'")
+        logger.warning("Justice role missing", guild_id=guild.id)
         justice_role = await guild.create_role(
             name=JUSTICE_ROLE_NAME,
             hoist=True,
             reason="Created by bot to keep track of justices.",
         )
         logger.info(
-            f"Created blank justice role (id={justice_role.id})—IT IS ADVISABLE TO CUSTOMIZE IT WITH PERMISSIONS AND DISPLAY OPTIONS (this will only be shown once)."
+            f"Created blank justice role (id={justice_role.id})—IT IS ADVISABLE TO CUSTOMIZE IT WITH PERMISSIONS AND DISPLAY OPTIONS (this will only be shown once).",
+            guild_id=guild.id,
         )
     return justice_role
 
@@ -473,7 +497,8 @@ async def set_respect_role(
     if disrespectful_role is None or respectful_role is None:
         both_missing: bool = disrespectful_role is None and respectful_role is None
         logger.warning(
-            f"The {f"'{DISRESPECTFUL_ROLE_NAME}' " if disrespectful_role is None else ''}{'and ' if both_missing else ''}{f"'{RESPECTFUL_ROLE_NAME}' " if respectful_role is None else ''}role{'s' if both_missing else ''} do{'es' if respectful_role is not None or disrespectful_role is not None else ''} not exist in guild '{guild.name}'. Creating {'them' if both_missing else 'it'}."
+            f"The {f"'{DISRESPECTFUL_ROLE_NAME}' " if disrespectful_role is None else ''}{'and ' if both_missing else ''}{f"'{RESPECTFUL_ROLE_NAME}' " if respectful_role is None else ''}role{'s' if both_missing else ''} do{'es' if respectful_role is not None or disrespectful_role is not None else ''} not exist. Creating {'them' if both_missing else 'it'}.",
+            guild_id=guild.id,
         )
         i = False
         while True:
@@ -490,7 +515,8 @@ async def set_respect_role(
                         respectful_role = created_role
                 except discord.Forbidden:
                     logger.error(
-                        f"Missing permissions to create '{DISRESPECTFUL_ROLE_NAME if i else RESPECTFUL_ROLE_NAME}' role in '{guild.name}'"
+                        f"Missing permissions to create '{DISRESPECTFUL_ROLE_NAME if i else RESPECTFUL_ROLE_NAME}' role",
+                        guild_id=guild.id,
                     )
             if i:
                 break
@@ -506,12 +532,14 @@ async def set_respect_role(
                 respectful_role, reason=f"Respect score of {score} is positive."
             )
             logger.info(
-                f"{member.display_name} has been upgraded to '{RESPECTFUL_ROLE_NAME}'."
+                f"{member.display_name} has been upgraded to '{RESPECTFUL_ROLE_NAME}'.",
+                guild_id=guild.id,
             )
     elif disrespectful_role not in member.roles and respectful_role not in member.roles:
         await member.add_roles(disrespectful_role, reason="Bad respect score.")
         logger.info(
-            f"{member.display_name} has been assigned '{DISRESPECTFUL_ROLE_NAME}' because their roles were missing and their respect score is negative."
+            f"{member.display_name} has been assigned '{DISRESPECTFUL_ROLE_NAME}' because their roles were missing and their respect score is negative.",
+            guild_id=guild.id,
         )
     elif score < min(-1.0, -0.01 * sum(not memb.bot for memb in guild.members)):
         if respectful_role in member.roles:
@@ -521,7 +549,8 @@ async def set_respect_role(
             if disrespectful_role not in member.roles:
                 await member.add_roles(disrespectful_role)
                 logger.info(
-                    f"{member.display_name} has been downgraded to '{DISRESPECTFUL_ROLE_NAME}'."
+                    f"{member.display_name} has been downgraded to '{DISRESPECTFUL_ROLE_NAME}'.",
+                    guild_id=guild.id,
                 )
 
 
@@ -907,18 +936,22 @@ def save_ban_requests(ban_requests: BanRequestsType) -> None:
         )
 
 
-async def dm_member(member: discord.Member, message: str) -> None:
+async def dm_member(
+    member: discord.Member | discord.User, message: str, guild_id: int
+) -> None:
     """
     Send a direct message to a member, creating a DM channel if necessary.
     :param member:
     :param message:
+    :param guild_id:
     """
 
     try:
         await member.send(message)
     except discord.errors.Forbidden:
         logger.error(
-            f'Forbidden to send message to "{member.display_name}" (id={member.id}).'
+            f'Forbidden to send message to "{member.display_name}" (id={member.id}).',
+            guild_id=guild_id,
         )
 
 
@@ -934,17 +967,20 @@ async def message_generator(
         ):
             if shutdown_event.is_set():
                 logger.info(
-                    f"Shutdown requested. Aborting message gathering in {channel.name}."
+                    f"Shutdown requested. Aborting message gathering in {channel.name}.",
+                    guild_id=channel.guild.id,
                 )
                 return
             yield message
     except discord.Forbidden:
         logger.info(
-            f"No permission to read history in channel {channel.name} ({channel.id})"
+            f"No permission to read history in channel {channel.name} ({channel.id})",
+            guild_id=channel.guild.id,
         )
     except discord.HTTPException as e:
         logger.error(
-            f"Failed to fetch messages from channel {channel.name} ({channel.id}): {e}"
+            f"Failed to fetch messages from channel {channel.name} ({channel.id}): {e}",
+            guild_id=channel.guild.id,
         )
 
 
@@ -1001,12 +1037,14 @@ async def process_messages_in_order(
         except StopAsyncIteration:
             continue
         except Exception as e:
-            logger.error(f"Error retrieving message: {e}")
+            logger.error(f"Error retrieving message: {e}", guild_id=None)
             continue
 
     while heap:
         if shutdown_event.is_set():
-            logger.info("Shutdown requested. Halting missed-message processing.")
+            logger.info(
+                "Shutdown requested. Halting missed-message processing.", guild_id=None
+            )
             return
 
         created_at_ts, gen_id, gen, msg = heapq.heappop(heap)
@@ -1020,7 +1058,7 @@ async def process_messages_in_order(
         except StopAsyncIteration:
             pass
         except Exception as e:
-            logger.error(f"Error retrieving next message: {e}")
+            logger.error(f"Error retrieving next message: {e}", guild_id=None)
 
 
 # -----------------------------------------------------------------------------
@@ -1045,14 +1083,17 @@ async def on_ready() -> None:
             indent=2,
         )
         logger.info(
-            "Config file not found. Created a default one with all current guilds."
+            "Config file not found. Created a default one with all current guilds.",
+            guild_id=None,
         )
     else:
         try:
             with open(CONFIG_FILE) as config_file:
                 config_data: dict = json.load(config_file)
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse config file {CONFIG_FILE}: {str(e)}")
+            logger.error(
+                f"Failed to parse config file {CONFIG_FILE}: {str(e)}", guild_id=None
+            )
             await shutdown()
             return
 
@@ -1070,7 +1111,8 @@ async def on_ready() -> None:
             g_id: int = int(g_id_str)
         except ValueError:
             logger.error(
-                f"Invalid guild ID '{g_id_str}' - must be integer. Skipping entry."
+                f"Invalid guild ID '{g_id_str}' - must be integer. Skipping entry.",
+                guild_id=None,
             )
             continue
 
@@ -1078,10 +1120,11 @@ async def on_ready() -> None:
         guild: discord.Guild | None = bot.get_guild(g_id)
         if guild is None:
             logger.error(
-                f"Configured guild id={g_id} not found - bot not in server. Skipping entry."
+                f"Configured guild id={g_id} not found - bot not in server. Skipping entry.",
+                guild_id=None,
             )
             continue
-        guild_label: str = f"{guild.name} (id={g_id})"
+        guild_label: str = f"{guild.name}"
 
         # Validate top-level keys
         present_guild_keys: set[str] = set(g_cfg.keys())
@@ -1089,12 +1132,15 @@ async def on_ready() -> None:
         # Check for missing keys
         for missing_key in expected_guild_keys - present_guild_keys:
             logger.warning(
-                f"{guild_label}: Missing config key '{missing_key}' - using default value."
+                f"{guild_label}: Missing config key '{missing_key}' - using default value.",
+                guild_id=g_id,
             )
 
         # Check for unknown top-level keys
         for unknown_key in present_guild_keys - expected_guild_keys:
-            logger.warning(f"{guild_label}: Unknown config key '{unknown_key}'")
+            logger.warning(
+                f"{guild_label}: Unknown config key '{unknown_key}'", guild_id=g_id
+            )
 
         # Validate logger config
         logger_cfg: dict = g_cfg.get("logger", {})
@@ -1103,18 +1149,22 @@ async def on_ready() -> None:
         # Check for missing logger keys
         for missing_key in expected_logger_keys - present_logger_keys:
             logger.warning(
-                f"{guild_label} Logger: Missing config key '{missing_key}' - using default value."
+                f"{guild_label} Logger: Missing config key '{missing_key}' - using default value.",
+                guild_id=g_id,
             )
 
         # Check for unknown logger keys
         for unknown_key in present_logger_keys - expected_logger_keys:
-            logger.warning(f"{guild_label} Logger: Unknown key '{unknown_key}'")
+            logger.warning(
+                f"{guild_label} Logger: Unknown key '{unknown_key}'", guild_id=g_id
+            )
 
         # Validate required_roles structure
         required_roles: list = g_cfg.get("required_roles", [])
         if not isinstance(required_roles, list):
             logger.error(
-                f"{guild_label}: Invalid required_roles format, must be list of role lists. Assuming no requirements."
+                f"{guild_label}: Invalid required_roles format, must be list of role lists. Assuming no requirements.",
+                guild_id=g_id,
             )
             required_roles = []
 
@@ -1123,20 +1173,23 @@ async def on_ready() -> None:
         for role_group in required_roles:
             if not isinstance(role_group, list):
                 logger.error(
-                    f'{guild_label}: Invalid required_roles group format "{role_group}", must be list of role IDs. Skipping group.'
+                    f'{guild_label}: Invalid required_roles group format "{role_group}", must be list of role IDs. Skipping group.',
+                    guild_id=g_id,
                 )
                 continue
             valid_group: list[int] = []
             for role_id in role_group:
                 if not isinstance(role_id, int):
                     logger.error(
-                        f"{guild_label}: Non-integer role ID {role_id} found. Skipping group."
+                        f"{guild_label}: Non-integer role ID {role_id} found. Skipping group.",
+                        guild_id=g_id,
                     )
                     valid_group = []
                     break
                 if not guild.get_role(role_id):
                     logger.error(
-                        f"{guild_label}: Role ID {role_id} not found in guild. Skipping group."
+                        f"{guild_label}: Role ID {role_id} not found in guild. Skipping group.",
+                        guild_id=g_id,
                     )
                     valid_group = []
                     break
@@ -1154,19 +1207,22 @@ async def on_ready() -> None:
                 }
             )
         except Exception as e:
-            logger.error(f"{guild_label}: Failed to create config - {str(e)}.")
+            logger.error(
+                f"{guild_label}: Failed to create config - {str(e)}.", guild_id=g_id
+            )
 
     # Final guild verification
     for g_id in list(guilds.keys()):
         guild: discord.Guild | None = bot.get_guild(g_id)
         if not guild:
             logger.error(
-                f"Configured guild id={g_id} not found - bot not in server. Removing from config."
+                f"Configured guild id={g_id} not found - bot not in server. Removing from config.",
+                guild_id=None,
             )
             del guilds[g_id]
 
     if not guilds:
-        logger.error("No valid guild configurations found.")
+        logger.error("No valid guild configurations found.", guild_id=None)
         await shutdown()
         return
 
@@ -1178,7 +1234,7 @@ async def on_ready() -> None:
     # Initialize guild objects
     guild_objects = [bot.get_guild(g_id) for g_id in GUILDS.keys()]
 
-    logger.info("Verifying bot nicknames...")
+    logger.info("Verifying bot nicknames...", guild_id=None)
     for gld in guild_objects:
         await update_bot_nickname(gld)
 
@@ -1295,7 +1351,8 @@ async def on_ready() -> None:
                     ephemeral=True,
                 )
                 logger.info(
-                    f"Invalid severity value for {interaction.user.display_name} to vote for {target.display_name} with severity {fraction_severity}."
+                    f"Invalid severity value for {interaction.user.display_name} to vote for {target.display_name} with severity {fraction_severity}.",
+                    guild_id=interaction.guild.id,
                 )
                 return
             data[interaction.guild.id][interaction.user.id].opinions[target.id] = (
@@ -1412,16 +1469,18 @@ async def on_ready() -> None:
                 )
             except discord.errors.NotFound:
                 logger.error(
-                    f'Interaction not found to send vote confirmation to "{interaction.user.display_name}". Processing may have taken too long. Proceeding to send a DM.'
+                    f'Interaction not found to send vote confirmation to "{interaction.user.display_name}". Processing may have taken too long. Proceeding to send a DM.',
+                    guild_id=interaction.guild.id,
                 )
                 await dm_member(
                     interaction.user,
                     f"With apologies for the delay, your vote for {target.display_name} with severity {formatted_severity} has been successfully processed. Your opinion on {target.display_name} is now "
                     f"{data[interaction.guild.id][interaction.user.id].opinions[target.id]}.",
+                    interaction.guild.id,
                 )
 
     async with data_lock:
-        logger.info("Bot is ready, starting to sync commands...")
+        logger.info("Bot is ready, starting to sync commands...", guild_id=None)
         commands_synced: list[discord.app_commands.AppCommand] = []
         for gld in guild_objects:
             commands_synced.extend(await bot.tree.sync(guild=gld))
@@ -1430,10 +1489,10 @@ async def on_ready() -> None:
         assert len(commands_synced) == sum(
             len(bot.tree.get_commands(guild=g)) for g in guild_objects
         )
-        logger.info("Slash commands synced!")
+        logger.info("Slash commands synced!", guild_id=None)
         day_change.start()
-        logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
-        logger.info("Catching up on missed messages...")
+        logger.info(f"Logged in as {bot.user.name} (ID: {bot.user.id})", guild_id=None)
+        logger.info("Catching up on missed messages...", guild_id=None)
 
         dta = await load_data()
         # Add missing guilds to the data file
@@ -1478,7 +1537,7 @@ async def on_ready() -> None:
     await process_messages_in_order(generators)
 
     is_initialized = True
-    logger.info("Initialization complete.")
+    logger.info("Initialization complete.", guild_id=None)
 
 
 async def get_justice_ids(guild: discord.Guild) -> list[int]:
@@ -1537,7 +1596,8 @@ async def _on_member_join_impl(
     if not hasattr(member, "guild"):
         if welcome_dm:
             logger.info(
-                f"Unable to welcome user {member.display_name} (id={member.id}) to server {guild.name} because they are no longer a member. Data has been updated."
+                f"Unable to welcome user {member.display_name} (id={member.id}) because they are no longer a member. Data has been updated.",
+                guild_id=guild.id,
             )
         return
     if message_sent:
@@ -1549,7 +1609,7 @@ async def _on_member_join_impl(
                 sending_message += "With apologies for the delay,\n"
             sending_message += welcome_dm
             if member.id != bot.user.id:
-                await dm_member(member, sending_message)
+                await dm_member(member, sending_message, guild.id)
         else:
             message_sent = False
     else:
@@ -1573,7 +1633,8 @@ async def _on_member_join_impl(
             )
 
     logger.info(
-        f"{member.display_name} has been {welcome_status} and their roles have been set."
+        f"{member.display_name} has been {welcome_status} and their roles have been set.",
+        guild_id=guild.id,
     )
 
 
@@ -1697,18 +1758,20 @@ async def _smart_timeout(
                     break
         except discord.errors.Forbidden:
             logger.warning(
-                f'Unable to preserve moderator-issued timeouts — missing audit log permissions in server "{member.guild.name}" (id={member.guild.id})'
+                "Unable to preserve moderator-issued timeouts — missing audit log permissions",
+                guild_id=member.guild.id,
             )
 
     if can_update:
         try:
             await member.timeout(duration, reason=reason)
             if message is not None:
-                await dm_member(member, message)
+                await dm_member(member, message, member.guild.id)
             return True
         except discord.errors.Forbidden:
             logger.warning(
-                f'Forbidden to set timeout for member "{member.display_name}" (id={member.id}, server={member.guild.id}).'
+                f'Forbidden to set timeout for member "{member.display_name}" (id={member.id}).',
+                guild_id=member.guild.id,
             )
     return False
 
@@ -1911,30 +1974,41 @@ async def day_change() -> None:
                     )
                     if deleted_count > 0:
                         logger.info(
-                            f"Deleted {deleted_count} non-poll messages in the polls channel."
+                            f"Deleted {deleted_count} non-poll messages in the polls channel.",
+                            guild_id=guild.id,
                         )
-    logger.info("Data update complete.")
-    if GUILDS[guild.id].logger.enabled:
-        await asyncio.sleep(30)
+            logger.info("Data update complete.", guild_id=guild.id)
 
-        logger_channel: discord.TextChannel | None = discord.utils.get(
-            guild.text_channels, name=GUILDS[guild.id].logger.channel_name
-        )
-        if logger_channel is not None:
-            # Use the day_change_time of today as the after parameter
-            deleted = await logger_channel.purge(
-                after=datetime.datetime.combine(datetime.date.today(), DAY_CHANGE_TIME),
-                check=lambda msg: is_timeout_prolongation_log(msg, log_deletions),
-                bulk=True,
-                limit=None,
-                reason="Clean up timeout logs.",
-            )
-            logger.info(
-                f"Deleted {len(deleted)} role timeout prolongation logs from the logger channel."
-            )
-        else:
-            logger.warning(f"Unable to access logger channel `#{GUILDS[guild.id].logger.channel_name}` in guild {guild.name} (id={guild.id}).")
-    logger.info("Full day change complete.")
+            if GUILDS[guild.id].logger.enabled:
+                await asyncio.sleep(30)
+
+                logger_channel: discord.TextChannel | None = discord.utils.get(
+                    guild.text_channels, name=GUILDS[guild.id].logger.channel_name
+                )
+                if logger_channel is not None:
+                    # Use the day_change_time of today as the after parameter
+                    deleted = await logger_channel.purge(
+                        after=datetime.datetime.combine(
+                            datetime.date.today(), DAY_CHANGE_TIME
+                        ),
+                        check=lambda msg: is_timeout_prolongation_log(
+                            msg, log_deletions
+                        ),
+                        bulk=True,
+                        limit=None,
+                        reason="Clean up timeout logs.",
+                    )
+                    logger.info(
+                        f"Deleted {len(deleted)} role timeout prolongation logs from the logger channel.",
+                        guild_id=guild.id,
+                    )
+                else:
+                    logger.warning(
+                        f"Unable to access logger channel `#{GUILDS[guild.id].logger.channel_name}`",
+                        guild_id=guild.id,
+                    )
+
+    logger.info("Full day change complete.", guild_id=None)
 
 
 # When a user updates their roles, check if they have the required roles
@@ -1995,11 +2069,14 @@ async def shutdown() -> None:
     """
     Gracefully shuts down the bot.
     """
-    logger.debug("Waiting to acquire data_lock...")
+    logger.debug("Waiting to acquire data_lock...", guild_id=None)
     await data_lock.acquire()
-    logger.debug("Data lock acquired; closing bot...")
+    logger.debug("Data lock acquired; closing bot...", guild_id=None)
     await bot.close()  # Gracefully close the Discord bot connection
-    logger.info("Shutdown Complete".center(shutil.get_terminal_size().columns, "="))
+    logger.info(
+        "Shutdown Complete".center(shutil.get_terminal_size().columns, "="),
+        guild_id=None,
+    )
 
 
 # noinspection PyUnusedLocal
@@ -2010,7 +2087,10 @@ def signal_handler(sig: int, frame: FrameType | None) -> None:
     :param frame:
     """
     logger.info(
-        "SIGTERM Received—Shutting Down".center(shutil.get_terminal_size().columns, "=")
+        "SIGTERM Received—Shutting Down".center(
+            shutil.get_terminal_size().columns, "="
+        ),
+        guild_id=None,
     )
     shutdown_event.set()
     loop = asyncio.get_event_loop()
@@ -2034,7 +2114,7 @@ def handle_exception(
     :param exc_traceback:
     """
     # Print the error and stack trace
-    logger.error("Unhandled exception occurred:")
+    logger.error("Unhandled exception occurred:", guild_id=None)
     traceback.print_exception(exc_type, exc_value, exc_traceback)
 
     # If the script has been running for less than 1 hour, exit
@@ -2045,7 +2125,7 @@ def handle_exception(
     time.sleep(60)
 
     # Restart the script
-    logger.info("Restarting script...")
+    logger.info("Restarting script...", guild_id=None)
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
