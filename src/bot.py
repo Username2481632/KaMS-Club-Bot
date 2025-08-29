@@ -1746,9 +1746,9 @@ async def _smart_timeout(
                 oldest_first=False,
                 action=discord.AuditLogAction.member_update,
             ):
-                if entry.target.id == member.id and any(
-                    change.key == "communication_disabled_until"
-                    for change in entry.changes
+                if entry.target.id == member.id and (
+                    getattr(entry.before, "timed_out_until", None)
+                    or getattr(entry.after, "timed_out_until", None)
                 ):
                     can_update = (
                         entry.user.id == member.guild.me.id
