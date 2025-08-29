@@ -8,8 +8,8 @@ Type=oneshot
 User=%i
 WorkingDirectory=/home/%i/KaMS-Club-Bot/ip-updater
 ExecStart=/home/%i/KaMS-Club-Bot/venv/bin/python3.12 /home/%i/KaMS-Club-Bot/ip-updater/ip_updater.py
-Environment=GITHUB_TOKEN_FILE=/home/%i/.github_token
-Environment=GITHUB_REPO=YourUsername/KaMS-Club-Bot
+Environment=GITHUB_TOKEN_FILE=/home/%i/.config/kams-club-bot/github_token
+Environment=GITHUB_REPO=PLACEHOLDER_REPO_NAME
 StandardOutput=journal
 StandardError=journal
 

@@ -13,15 +13,44 @@ fi
 
 # Get the current user
 USER=$(whoami)
-REPO_NAME="Username2481632/KaMS-Club-Bot"
 
 echo "Current user: $USER"
 
-# Prompt for GitHub repository
-read -p "Enter your GitHub repository (format: username/repo-name) [$REPO_NAME]: " input_repo
-if [ ! -z "$input_repo" ]; then
-    REPO_NAME="$input_repo"
+# Create config directory for the bot
+BOT_CONFIG_DIR="$HOME/.config/kams-club-bot"
+mkdir -p "$BOT_CONFIG_DIR"
+chmod 700 "$BOT_CONFIG_DIR"
+
+# Load saved repository name if it exists
+REPO_CONFIG_FILE="$BOT_CONFIG_DIR/github_repo"
+if [ -f "$REPO_CONFIG_FILE" ]; then
+    SAVED_REPO=$(cat "$REPO_CONFIG_FILE" 2>/dev/null || echo "")
+    if [ ! -z "$SAVED_REPO" ]; then
+        echo "Previously used repository: $SAVED_REPO"
+        read -p "Use this repository? (y/n) [y]: " use_saved
+        if [ -z "$use_saved" ] || [ "$use_saved" = "y" ] || [ "$use_saved" = "Y" ]; then
+            REPO_NAME="$SAVED_REPO"
+        fi
+    fi
 fi
+
+# Prompt for GitHub repository if not set
+if [ -z "$REPO_NAME" ]; then
+    while [ -z "$REPO_NAME" ]; do
+        read -p "Enter your GitHub repository (format: username/repo-name): " REPO_NAME
+        if [ -z "$REPO_NAME" ]; then
+            echo "Error: Repository name is required"
+        elif [[ ! "$REPO_NAME" =~ ^[^/]+/[^/]+$ ]]; then
+            echo "Error: Repository name must be in format 'username/repo-name'"
+            REPO_NAME=""
+        fi
+    done
+fi
+
+# Save repository name for future use
+echo "$REPO_NAME" > "$REPO_CONFIG_FILE"
+chmod 600 "$REPO_CONFIG_FILE"
+echo "Repository name saved: $REPO_NAME"
 
 # Prompt for GitHub token
 echo ""
@@ -58,12 +87,13 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # Save GitHub token to file
-echo "$GITHUB_TOKEN" > ~/.github_token
-chmod 600 ~/.github_token
-echo "GitHub token saved to ~/.github_token"
+GITHUB_TOKEN_FILE="$BOT_CONFIG_DIR/github_token"
+echo "$GITHUB_TOKEN" > "$GITHUB_TOKEN_FILE"
+chmod 600 "$GITHUB_TOKEN_FILE"
+echo "GitHub token saved to $GITHUB_TOKEN_FILE"
 
 # Update service file with correct repository
-sed -i "s|YourUsername/KaMS-Club-Bot|$REPO_NAME|g" ip-updater@.service
+sed -i "s|PLACEHOLDER_REPO_NAME|$REPO_NAME|g" ip-updater@.service
 
 # Copy service files to systemd directory
 echo "Installing systemd service files..."
