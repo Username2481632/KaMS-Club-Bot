@@ -63,12 +63,14 @@ echo "Repository name saved: $REPO_NAME"
 # Load saved GitHub token if it exists
 if [ -f "$GITHUB_TOKEN_FILE" ]; then
     SAVED_TOKEN=$(cat "$GITHUB_TOKEN_FILE" 2>/dev/null || echo "")
-    if [ ! -z "$SAVED_TOKEN" ]; then
+    if [ ! -z "$SAVED_TOKEN" ] && [[ "$SAVED_TOKEN" == github_pat_* ]]; then
         echo "Previously used GitHub token found."
         read -p "Use the existing GitHub token? (y/n) [y]: " use_saved_token
-        if [ -z "$use_saved_token" ] || [ "$use_saved_token" = "y" ] || [ "$use_saved_token" = "Y" ]; then
+        if [ -z "$use_saved_token" ] || [ "${use_saved_token,,}" = "y" ]; then
             GITHUB_TOKEN="$SAVED_TOKEN"
         fi
+    elif [ ! -z "$SAVED_TOKEN" ]; then
+        echo "Warning: Saved token does not appear to be a valid GitHub fine-grained token (should start with 'github_pat_')."
     fi
 fi
 
