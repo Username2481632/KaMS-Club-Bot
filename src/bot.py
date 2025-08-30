@@ -299,7 +299,7 @@ intents.message_content = True
 intents.guilds = True
 bot = commands.Bot(command_prefix="", intents=intents)
 # Configure logging, excluding discord logs
-logger = logging.getLogger("casey")
+logger = logging.getLogger("casy")
 logger.setLevel(logging.INFO)
 # Create handlers
 console_handler = logging.StreamHandler()
