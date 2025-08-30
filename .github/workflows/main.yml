@@ -95,7 +95,6 @@ jobs:
               # Clean up - remove service files from Pi (they're now in /etc/systemd/system/)
               rm -f ~/KaMS-Club-Bot/ip-updater/ip-updater@.service
               rm -f ~/KaMS-Club-Bot/ip-updater/ip-updater@.timer
-              rm -f ~/KaMS-Club-Bot/ip-updater/setup_ip_updater.sh
             fi
 
       - name: Check if upgrade script is non-empty
