@@ -54,14 +54,12 @@ ENV_CONST = _parse_env_file(CONSTANTS_FILE)
 
 BOT_CONFIG_DIR = Path(ENV_CONST['BOT_CONFIG_DIR'])
 IP_CACHE_FILE = Path(ENV_CONST['IP_CACHE_FILE'])
-LOG_FILE = Path(ENV_CONST['LOG_FILE'])
 
-# Setup logging
+# Setup logging (stdout only for systemd journal)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        logging.FileHandler(LOG_FILE),
         logging.StreamHandler(sys.stdout)
     ]
 )
