@@ -26,8 +26,35 @@ if not GITHUB_TOKEN and GITHUB_TOKEN_FILE:
     except Exception as e:
         print(f"Error reading GitHub token from file: {e}")
 
-IP_CACHE_FILE = Path.home() / '.ip_cache.json'
-LOG_FILE = Path.home() / 'ip_updater.log'
+"""Unified config/path loading.
+We load from a simple shell-style env file ip-updater/constants.env so
+both Python and Bash share the same paths.
+"""
+CONSTANTS_FILE = Path(__file__).parent / 'constants.env'
+
+def _parse_env_file(path: Path) -> dict:
+    env = {}
+    if not path.exists():
+        return env
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if '=' not in line:
+            continue
+        k, v = line.split('=', 1)
+        k = k.strip()
+        v = v.strip()
+        # Expand $HOME and other env vars
+        v = os.path.expandvars(v)
+        env[k] = v
+    return env
+
+ENV_CONST = _parse_env_file(CONSTANTS_FILE)
+
+BOT_CONFIG_DIR = Path(ENV_CONST['BOT_CONFIG_DIR'])
+IP_CACHE_FILE = Path(ENV_CONST['IP_CACHE_FILE'])
+LOG_FILE = Path(ENV_CONST['LOG_FILE'])
 
 # Setup logging
 logging.basicConfig(
@@ -94,8 +121,15 @@ def load_cached_ip() -> Optional[str]:
 def save_cached_ip(ip: str) -> None:
     """Save the current IP address to cache."""
     try:
+        # Ensure config directory exists with secure permissions
+        BOT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        os.chmod(BOT_CONFIG_DIR, 0o700)
+        
         with open(IP_CACHE_FILE, 'w') as f:
             json.dump({'ip': ip}, f)
+        
+        # Set secure file permissions
+        os.chmod(IP_CACHE_FILE, 0o600)
         logger.info(f"Cached IP: {ip}")
     except Exception as e:
         logger.error(f"Failed to cache IP: {e}")

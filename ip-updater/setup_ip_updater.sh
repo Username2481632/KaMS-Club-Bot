@@ -16,13 +16,21 @@ USER=$(whoami)
 
 echo "Current user: $USER"
 
+# Source shared constants
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if [ -f "$SCRIPT_DIR/constants.env" ]; then
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/constants.env"
+else
+    echo "constants.env not found; expected at $SCRIPT_DIR/constants.env"
+    exit 1
+fi
+
 # Create config directory for the bot
-BOT_CONFIG_DIR="$HOME/.config/kams-club-bot"
 mkdir -p "$BOT_CONFIG_DIR"
 chmod 700 "$BOT_CONFIG_DIR"
 
 # Load saved repository name if it exists
-REPO_CONFIG_FILE="$BOT_CONFIG_DIR/github_repo"
 if [ -f "$REPO_CONFIG_FILE" ]; then
     SAVED_REPO=$(cat "$REPO_CONFIG_FILE" 2>/dev/null || echo "")
     if [ ! -z "$SAVED_REPO" ]; then
@@ -87,7 +95,6 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # Save GitHub token to file
-GITHUB_TOKEN_FILE="$BOT_CONFIG_DIR/github_token"
 echo "$GITHUB_TOKEN" > "$GITHUB_TOKEN_FILE"
 chmod 600 "$GITHUB_TOKEN_FILE"
 echo "GitHub token saved to $GITHUB_TOKEN_FILE"
