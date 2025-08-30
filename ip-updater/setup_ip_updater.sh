@@ -81,19 +81,6 @@ if [ -z "$GITHUB_TOKEN" ]; then
     exit 1
 fi
 
-# Install PyNaCl dependency for secret encryption
-echo "Installing PyNaCl dependency..."
-
-# Create virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
-    echo "Creating Python virtual environment..."
-    python3.12 -m venv venv
-fi
-
-source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-
 # Save GitHub token to file
 echo "$GITHUB_TOKEN" > "$GITHUB_TOKEN_FILE"
 chmod 600 "$GITHUB_TOKEN_FILE"
