@@ -90,7 +90,7 @@ def TIMEOUT_RESUME_MESSAGE(
     return f"Your role timeout in **{server_name}** has been removed, but you still have an earlier timeout of {f'{remaining_timeout.days} day{"" if remaining_timeout.days == 1 else "s"}' if remaining_timeout.days > 0 else ''} and {hours} hour{'' if hours == 1 else 's'} to serve."
 
 
-LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(guild_logger_name)s: %(message)s"
 MISSING_ROLE_TIMEOUT_DURATION: datetime.timedelta = datetime.timedelta(days=2)
 JUSTICE_DEEP_SCORE_REQUIREMENT: fractions.Fraction = fractions.Fraction(3, 2)
 DAY_CHANGE_TIME: datetime.time = datetime.time(hour=0, minute=0, second=0)
@@ -324,7 +324,7 @@ class GuildLoggerAdapter(logging.LoggerAdapter):
 
         if "extra" not in kwargs:
             kwargs["extra"] = {}
-        kwargs["extra"]["name"] = record_name
+        kwargs["extra"]["guild_logger_name"] = record_name
 
         return msg, kwargs
 
