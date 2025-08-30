@@ -60,25 +60,39 @@ echo "$REPO_NAME" > "$REPO_CONFIG_FILE"
 chmod 600 "$REPO_CONFIG_FILE"
 echo "Repository name saved: $REPO_NAME"
 
-# Prompt for GitHub token
-echo ""
-echo "You need to create a GitHub Fine-grained Personal Access Token."
-echo "Go to: https://github.com/settings/personal-access-tokens/new"
-echo ""
-echo "Required settings:"
-echo "  - Resource owner: Select your username or organization"
-echo "  - Repository access: Selected repositories -> Choose this repository"
-echo "  - Repository permissions:"
-echo "    * Actions: Write"
-echo "    * Metadata: Read" 
-echo "    * Secrets: Write"
-echo ""
-read -s -p "Enter your GitHub Fine-grained Personal Access Token: " GITHUB_TOKEN
-echo ""
+# Load saved GitHub token if it exists
+if [ -f "$GITHUB_TOKEN_FILE" ]; then
+    SAVED_TOKEN=$(cat "$GITHUB_TOKEN_FILE" 2>/dev/null || echo "")
+    if [ ! -z "$SAVED_TOKEN" ]; then
+        echo "Previously used GitHub token found."
+        read -p "Use the existing GitHub token? (y/n) [y]: " use_saved_token
+        if [ -z "$use_saved_token" ] || [ "$use_saved_token" = "y" ] || [ "$use_saved_token" = "Y" ]; then
+            GITHUB_TOKEN="$SAVED_TOKEN"
+        fi
+    fi
+fi
 
+# Prompt for GitHub token if not set
 if [ -z "$GITHUB_TOKEN" ]; then
-    echo "Error: GitHub token is required"
-    exit 1
+    echo ""
+    echo "You need to create a GitHub Fine-grained Personal Access Token."
+    echo "Go to: https://github.com/settings/personal-access-tokens/new"
+    echo ""
+    echo "Required settings:"
+    echo "  - Resource owner: Select your username or organization"
+    echo "  - Repository access: Selected repositories -> Choose this repository"
+    echo "  - Repository permissions:"
+    echo "    * Actions: Write"
+    echo "    * Metadata: Read" 
+    echo "    * Secrets: Write"
+    echo ""
+    read -s -p "Enter your GitHub Fine-grained Personal Access Token: " GITHUB_TOKEN
+    echo ""
+
+    if [ -z "$GITHUB_TOKEN" ]; then
+        echo "Error: GitHub token is required"
+        exit 1
+    fi
 fi
 
 # Save GitHub token to file
