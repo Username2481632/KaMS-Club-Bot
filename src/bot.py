@@ -90,7 +90,7 @@ def TIMEOUT_RESUME_MESSAGE(
     return f"Your role timeout in **{server_name}** has been removed, but you still have an earlier timeout of {f'{remaining_timeout.days} day{"" if remaining_timeout.days == 1 else "s"}' if remaining_timeout.days > 0 else ''} and {hours} hour{'' if hours == 1 else 's'} to serve."
 
 
-LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(guild_logger_name)s: %(message)s"
+LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 MISSING_ROLE_TIMEOUT_DURATION: datetime.timedelta = datetime.timedelta(days=2)
 JUSTICE_DEEP_SCORE_REQUIREMENT: fractions.Fraction = fractions.Fraction(3, 2)
 DAY_CHANGE_TIME: datetime.time = datetime.time(hour=0, minute=0, second=0)
@@ -311,22 +311,21 @@ logger.addHandler(console_handler)
 
 
 class GuildLoggerAdapter(logging.LoggerAdapter):
-    def process(self, msg, kwargs):
-        try:
-            guild_id = kwargs.pop("guild_id")
-        except KeyError:
-            raise ValueError("guild_id is required; pass None to omit")
+    def log(self, level, msg, *args, **kwargs):
+        if not self.isEnabledFor(level):
+            return
 
-        # Append guild id to logger name dynamically
-        record_name = self.logger.name
+        # Pop guild_id from kwargs to prevent it from being passed to the final log call
+        guild_id = kwargs.pop("guild_id", None)
+
+        # Determine the dynamic logger name
+        target_name = self.logger.name
         if guild_id is not None:
-            record_name = f"{record_name} - {guild_id}"
+            target_name = f"{self.logger.name} - {guild_id}"
 
-        if "extra" not in kwargs:
-            kwargs["extra"] = {}
-        kwargs["extra"]["guild_logger_name"] = record_name
-
-        return msg, kwargs
+        # Get the target logger and call its log method
+        target_logger = logging.getLogger(target_name)
+        target_logger.log(level, msg, *args, **kwargs)
 
 
 logger = GuildLoggerAdapter(logger, {})
