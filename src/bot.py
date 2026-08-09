@@ -411,20 +411,19 @@ async def save_data(data: FullDataType, output_file: str = DATA_FILE) -> None:
     :param data: The data dictionary to save.
     :param output_file: Path to the output JSON file.
     """
-    try:
-        json_data = json.dumps(
-            {
-                str(key1): {
-                    str(key2): value.to_dict() for key2, value in subdict.items()
-                }
-                for key1, subdict in data.items()
-            },
-            indent=2,
-        )
-        async with aiofiles.open(output_file, "w", encoding="utf-8") as file:
-            await file.write(json_data)
-    except IOError as e:
-        logger.error(f"Error saving data: {e}")
+    json_data = json.dumps(
+        {
+            str(key1): {str(key2): value.to_dict() for key2, value in subdict.items()}
+            for key1, subdict in data.items()
+        },
+        indent=2,
+    )
+    # Written alongside the target and renamed over it, so an interrupted write leaves
+    # the previous file rather than a truncated one that would load as no data at all.
+    temp_file: str = f"{output_file}.tmp"
+    async with aiofiles.open(temp_file, "w", encoding="utf-8") as file:
+        await file.write(json_data)
+    os.replace(temp_file, output_file)
 
 
 def format_severity(severity: fractions.Fraction) -> str:
