@@ -1775,6 +1775,244 @@ async def _smart_timeout(
     return False
 
 
+async def _day_change_for_guild(guild: discord.Guild) -> None:
+    """
+    Perform the daily update for a single guild, refreshing scores, roles and channels.
+    :param guild:
+    :return:
+    """
+    async with data_lock:
+        # Reloaded per guild: other handlers write between guilds, and a failure
+        # discards only this copy.
+        data: FullDataType = await load_data()
+
+        # Create a snapshot of the member list to prevent race conditions
+        members: list[discord.Member] = []
+
+        for member in guild.members:
+            if not member.bot:
+                members.append(member)
+                if member.id not in data[guild.id]:
+                    await _on_member_join_impl(member, data, guild)
+        for member_id in data[guild.id]:
+            if data[guild.id][member_id].shallow_score > 0:
+                data[guild.id][member_id].deep_score += fractions.Fraction(
+                    math.sqrt(data[guild.id][member_id].shallow_score)
+                ) / (len(members) ** (fractions.Fraction(1, 3)))
+                data[guild.id][member_id].shallow_score = fractions.Fraction(0)
+            elif data[guild.id][member_id].shallow_score < 0:
+                data[guild.id][member_id].deep_score += data[guild.id][
+                    member_id
+                ].shallow_score
+                data[guild.id][member_id].shallow_score /= fractions.Fraction(4, 1)
+                if data[guild.id][member_id].shallow_score > fractions.Fraction(
+                    -1, 100
+                ):
+                    data[guild.id][member_id].shallow_score = fractions.Fraction(0)
+            elif data[guild.id][member_id].deep_score > fractions.Fraction(1, 10):
+                data[guild.id][member_id].deep_score -= fractions.Fraction(1, 128)
+
+            # Apply credibility decay
+            data[guild.id][member_id].credibility = max(
+                fractions.Fraction(0),
+                data[guild.id][member_id].credibility
+                - CREDIBILITY_DECAY * CREDIBILITY_RATIO,
+            )
+
+        # Calculate justices
+        justices: list[discord.Member] = []
+        if len(data[guild.id].keys()) >= JUSTICE_COUNT * 5:
+            justices = sorted(
+                members,
+                key=lambda memb: justice_score(data[guild.id], memb),
+                reverse=True,
+            )[:JUSTICE_COUNT]
+            if (
+                data[guild.id][justices[-1].id].deep_score
+                <= JUSTICE_DEEP_SCORE_REQUIREMENT
+            ):
+                justices = []
+
+        log_deletions: list[int] = []
+        for member_id in data[guild.id]:
+            member = guild.get_member(member_id)
+
+            if member is not None:
+                await set_justice_role(member, [j.id for j in justices])
+
+            # Timeout members that are missing required roles
+            if member is not None and not member.bot:
+                member_role_ids: set[int] = set(rl.id for rl in member.roles)
+                if not all(
+                    member_role_ids & role_category
+                    for role_category in GUILDS[member.guild.id].required_roles
+                ):
+                    now = discord.utils.utcnow()
+                    original_timeout_seconds: float = (
+                        (member.timed_out_until - now).total_seconds()
+                        if member.timed_out_until is not None
+                        and member.timed_out_until > now
+                        else 0.0
+                    )
+                    was_timed_out: bool = (
+                        original_timeout_seconds
+                        > TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds()
+                    )
+
+                    if data[guild.id][member_id].suspended_timeout is None:
+                        if await _smart_timeout(
+                            member,
+                            MISSING_ROLE_TIMEOUT_DURATION,
+                            ROLE_TIMEOUT_REASON,
+                            MISSING_ROLE_MESSAGE(was_timed_out, guild.name),
+                        ):
+                            data[guild.id][
+                                member_id
+                            ].suspended_timeout = original_timeout_seconds
+                    elif await _smart_timeout(
+                        member,
+                        MISSING_ROLE_TIMEOUT_DURATION,
+                        ROLE_TIMEOUT_REASON,
+                        None,
+                    ):
+                        log_deletions.append(member_id)
+
+        await save_data(data)
+
+    # Nothing below touches the data, so it runs unlocked.
+
+    # Make a leaderboard of the five justices
+    message_content: str = ""
+    i: int
+    for i, justice_member in enumerate(justices):
+        message_content += f"{i + 1}. {justice_member.mention}\n"
+    if not message_content:
+        message_content = "No justices have been determined yet."
+
+    try:
+        justice_channel_category: discord.CategoryChannel | None = discord.utils.get(
+            guild.categories, name=JUSTICE_CHANNEL_CATEGORY
+        )
+        if justice_channel_category is None:
+            justice_channel_category = await guild.create_category(
+                JUSTICE_CHANNEL_CATEGORY
+            )
+            assert justice_channel_category is not None
+        justice_channel: discord.TextChannel | None = discord.utils.get(
+            justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME
+        )
+        found: bool = False
+        previous_justice_ids: set[int] = set()
+        if justice_channel is None:
+            bot_role: discord.Role | None = discord.utils.get(
+                guild.roles, name=bot.user.name
+            )
+            assert bot_role is not None, (
+                f"Role with bot name '{bot.user.name}' not found in guild '{guild.name}'."
+            )
+            justice_channel = await justice_channel_category.create_text_channel(
+                JUSTICE_CHANNEL_NAME,
+                overwrites={
+                    guild.default_role: discord.PermissionOverwrite(
+                        send_messages=False,
+                        create_public_threads=False,
+                        create_private_threads=False,
+                    ),
+                    bot_role: discord.PermissionOverwrite(send_messages=True),
+                },
+            )
+        else:
+            async for message in justice_channel.history():
+                if message.author == bot.user:
+                    previous_justice_ids = {
+                        int(mention.id) for mention in message.mentions
+                    }
+                if not found and message.content != message_content:
+                    await message.delete()
+                else:
+                    found = True
+        if not found:
+            # Only mention the justices that aren't in previous_justice_ids
+            await justice_channel.send(
+                message_content,
+                allowed_mentions=discord.AllowedMentions(
+                    users=[
+                        discord.Object(id=justice_id)
+                        for justice_id in set(justice.id for justice in justices)
+                        - previous_justice_ids
+                    ]
+                ),
+            )
+    except discord.errors.Forbidden:
+        logger.warning(
+            f"Unable to update the justice list in `#{JUSTICE_CHANNEL_NAME}`",
+            guild_id=guild.id,
+        )
+
+    # Purge the polls channel, but only if the guild has it enabled
+    if GUILDS[guild.id].purge_polls:
+        polls_channel: discord.TextChannel | None = discord.utils.get(
+            guild.text_channels, name="polls"
+        )
+        if polls_channel is not None:
+            try:
+                deleted_count: int = len(
+                    await polls_channel.purge(
+                        after=datetime.datetime(year=2024, month=7, day=14),
+                        check=lambda msg: msg.poll is None
+                        and not msg.pinned
+                        and not msg.content.startswith("[POLL]"),
+                        bulk=True,
+                        limit=None,
+                        oldest_first=True,
+                        reason="Clean up non-poll messages.",
+                    )
+                )
+                if deleted_count > 0:
+                    logger.info(
+                        f"Deleted {deleted_count} non-poll messages in the polls channel.",
+                        guild_id=guild.id,
+                    )
+            except discord.errors.Forbidden:
+                logger.warning(
+                    "Unable to purge polls channel `#polls`", guild_id=guild.id
+                )
+    logger.info("Data update complete.", guild_id=guild.id)
+
+    if GUILDS[guild.id].logger.enabled:
+        await asyncio.sleep(30)
+
+        logger_channel: discord.TextChannel | None = discord.utils.get(
+            guild.text_channels, name=GUILDS[guild.id].logger.channel_name
+        )
+        if logger_channel is not None:
+            try:
+                # Use the day_change_time of today as the after parameter
+                deleted = await logger_channel.purge(
+                    after=datetime.datetime.combine(
+                        datetime.date.today(), DAY_CHANGE_TIME
+                    ),
+                    check=lambda msg: is_timeout_prolongation_log(msg, log_deletions),
+                    bulk=True,
+                    limit=None,
+                    reason="Clean up timeout logs.",
+                )
+                logger.info(
+                    f"Deleted {len(deleted)} role timeout prolongation logs from the logger channel.",
+                    guild_id=guild.id,
+                )
+            except discord.errors.Forbidden:
+                logger.warning(
+                    f"Unable to purge logger channel `#{GUILDS[guild.id].logger.channel_name}`",
+                    guild_id=guild.id,
+                )
+        else:
+            logger.warning(
+                f"Unable to access logger channel `#{GUILDS[guild.id].logger.channel_name}`",
+                guild_id=guild.id,
+            )
+
+
 @tasks.loop(time=DAY_CHANGE_TIME)
 async def day_change() -> None:
     """
@@ -1783,231 +2021,40 @@ async def day_change() -> None:
     """
     logger.info("Day change has started.")
     async with data_lock:
-        data: FullDataType = await load_data()
         backup_file_path: str = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../data_backup")
         )
         if not os.path.exists(backup_file_path):
             os.makedirs(backup_file_path)
-        await save_data(
-            data,
+        backup_file: str = (
             backup_file_path
-            + f"/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json",
-        )  # Backup data
+            + f"/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
+        )
+        if os.path.exists(DATA_FILE):
+            shutil.copyfile(DATA_FILE, backup_file)  # Backup data
+        else:
+            # Record the empty state so the series has no gap.
+            logger.error(f"Data file {DATA_FILE} is missing.", guild_id=None)
+            await save_data({}, backup_file)
 
-        for guild in guild_objects:
-            assert guild is not None
+    failed_guilds: list[int] = []
+    for guild in guild_objects:
+        assert guild is not None
 
-            # Create a snapshot of the member list to prevent race conditions
-            members: list[discord.Member] = []
+        try:
+            await _day_change_for_guild(guild)
+        except Exception:
+            failed_guilds.append(guild.id)
+            logger.exception("Day change failed.", guild_id=guild.id)
 
-            for member in guild.members:
-                if not member.bot:
-                    members.append(member)
-                    if member.id not in data[guild.id]:
-                        await _on_member_join_impl(member, data, guild)
-            for member_id in data[guild.id]:
-                if data[guild.id][member_id].shallow_score > 0:
-                    data[guild.id][member_id].deep_score += fractions.Fraction(
-                        math.sqrt(data[guild.id][member_id].shallow_score)
-                    ) / (len(members) ** (fractions.Fraction(1, 3)))
-                    data[guild.id][member_id].shallow_score = fractions.Fraction(0)
-                elif data[guild.id][member_id].shallow_score < 0:
-                    data[guild.id][member_id].deep_score += data[guild.id][
-                        member_id
-                    ].shallow_score
-                    data[guild.id][member_id].shallow_score /= fractions.Fraction(4, 1)
-                    if data[guild.id][member_id].shallow_score > fractions.Fraction(
-                        -1, 100
-                    ):
-                        data[guild.id][member_id].shallow_score = fractions.Fraction(0)
-                elif data[guild.id][member_id].deep_score > fractions.Fraction(1, 10):
-                    data[guild.id][member_id].deep_score -= fractions.Fraction(1, 128)
-
-                # Apply credibility decay
-                data[guild.id][member_id].credibility = max(
-                    fractions.Fraction(0),
-                    data[guild.id][member_id].credibility
-                    - CREDIBILITY_DECAY * CREDIBILITY_RATIO,
-                )
-
-            # Calculate justices
-            justices: list[discord.Member] = []
-            if len(data[guild.id].keys()) >= JUSTICE_COUNT * 5:
-                justices = sorted(
-                    members,
-                    key=lambda memb: justice_score(data[guild.id], memb),
-                    reverse=True,
-                )[:JUSTICE_COUNT]
-                if (
-                    data[guild.id][justices[-1].id].deep_score
-                    <= JUSTICE_DEEP_SCORE_REQUIREMENT
-                ):
-                    justices = []
-
-            log_deletions: list[int] = []
-            for member_id in data[guild.id]:
-                member = guild.get_member(member_id)
-
-                if member is not None:
-                    await set_justice_role(member, [j.id for j in justices])
-
-                # Timeout members that are missing required roles
-                if member is not None and not member.bot:
-                    member_role_ids: set[int] = set(rl.id for rl in member.roles)
-                    if not all(
-                        member_role_ids & role_category
-                        for role_category in GUILDS[member.guild.id].required_roles
-                    ):
-                        now = discord.utils.utcnow()
-                        original_timeout_seconds: float = (
-                            (member.timed_out_until - now).total_seconds()
-                            if member.timed_out_until is not None
-                            and member.timed_out_until > now
-                            else 0.0
-                        )
-                        was_timed_out: bool = (
-                            original_timeout_seconds
-                            > TIMEOUT_NOTIFICATION_THRESHOLD.total_seconds()
-                        )
-
-                        if data[guild.id][member_id].suspended_timeout is None:
-                            if await _smart_timeout(
-                                member,
-                                MISSING_ROLE_TIMEOUT_DURATION,
-                                ROLE_TIMEOUT_REASON,
-                                MISSING_ROLE_MESSAGE(was_timed_out, guild.name),
-                            ):
-                                data[guild.id][
-                                    member_id
-                                ].suspended_timeout = original_timeout_seconds
-                        elif await _smart_timeout(
-                            member,
-                            MISSING_ROLE_TIMEOUT_DURATION,
-                            ROLE_TIMEOUT_REASON,
-                            None,
-                        ):
-                            log_deletions.append(member_id)
-
-            await save_data(data)
-
-            # Make a leaderboard of the five justices
-            message_content: str = ""
-            i: int
-            for i, justice_member in enumerate(justices):
-                message_content += f"{i + 1}. {justice_member.mention}\n"
-            if not message_content:
-                message_content = "No justices have been determined yet."
-
-            justice_channel_category: discord.CategoryChannel | None = (
-                discord.utils.get(guild.categories, name=JUSTICE_CHANNEL_CATEGORY)
-            )
-            if justice_channel_category is None:
-                justice_channel_category = await guild.create_category(
-                    JUSTICE_CHANNEL_CATEGORY
-                )
-                assert justice_channel_category is not None
-            justice_channel: discord.TextChannel | None = discord.utils.get(
-                justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME
-            )
-            found: bool = False
-            previous_justice_ids: set[int] = set()
-            if justice_channel is None:
-                bot_role: discord.Role | None = discord.utils.get(
-                    guild.roles, name=bot.user.name
-                )
-                assert bot_role is not None, (
-                    f"Role with bot name '{bot.user.name}' not found in guild '{guild.name}'."
-                )
-                justice_channel = await justice_channel_category.create_text_channel(
-                    JUSTICE_CHANNEL_NAME,
-                    overwrites={
-                        guild.default_role: discord.PermissionOverwrite(
-                            send_messages=False,
-                            create_public_threads=False,
-                            create_private_threads=False,
-                        ),
-                        bot_role: discord.PermissionOverwrite(send_messages=True),
-                    },
-                )
-            else:
-                async for message in justice_channel.history():
-                    if message.author == bot.user:
-                        previous_justice_ids = {
-                            int(mention.id) for mention in message.mentions
-                        }
-                    if not found and message.content != message_content:
-                        await message.delete()
-                    else:
-                        found = True
-            if not found:
-                # Only mention the justices that aren't in previous_justice_ids
-                await justice_channel.send(
-                    message_content,
-                    allowed_mentions=discord.AllowedMentions(
-                        users=[
-                            discord.Object(id=justice_id)
-                            for justice_id in set(justice.id for justice in justices)
-                            - previous_justice_ids
-                        ]
-                    ),
-                )
-
-            # Purge the polls channel, but only if the guild has it enabled
-            if GUILDS[guild.id].purge_polls:
-                polls_channel: discord.TextChannel | None = discord.utils.get(
-                    guild.text_channels, name="polls"
-                )
-                if polls_channel is not None:
-                    deleted_count: int = len(
-                        await polls_channel.purge(
-                            after=datetime.datetime(year=2024, month=7, day=14),
-                            check=lambda msg: msg.poll is None
-                            and not msg.pinned
-                            and not msg.content.startswith("[POLL]"),
-                            bulk=True,
-                            limit=None,
-                            oldest_first=True,
-                            reason="Clean up non-poll messages.",
-                        )
-                    )
-                    if deleted_count > 0:
-                        logger.info(
-                            f"Deleted {deleted_count} non-poll messages in the polls channel.",
-                            guild_id=guild.id,
-                        )
-            logger.info("Data update complete.", guild_id=guild.id)
-
-            if GUILDS[guild.id].logger.enabled:
-                await asyncio.sleep(30)
-
-                logger_channel: discord.TextChannel | None = discord.utils.get(
-                    guild.text_channels, name=GUILDS[guild.id].logger.channel_name
-                )
-                if logger_channel is not None:
-                    # Use the day_change_time of today as the after parameter
-                    deleted = await logger_channel.purge(
-                        after=datetime.datetime.combine(
-                            datetime.date.today(), DAY_CHANGE_TIME
-                        ),
-                        check=lambda msg: is_timeout_prolongation_log(
-                            msg, log_deletions
-                        ),
-                        bulk=True,
-                        limit=None,
-                        reason="Clean up timeout logs.",
-                    )
-                    logger.info(
-                        f"Deleted {len(deleted)} role timeout prolongation logs from the logger channel.",
-                        guild_id=guild.id,
-                    )
-                else:
-                    logger.warning(
-                        f"Unable to access logger channel `#{GUILDS[guild.id].logger.channel_name}`",
-                        guild_id=guild.id,
-                    )
-
-    logger.info("Full day change complete.", guild_id=None)
+    if failed_guilds:
+        logger.error(
+            f"Day change complete for {len(guild_objects) - len(failed_guilds)} of "
+            f"{len(guild_objects)} guilds.",
+            guild_id=None,
+        )
+    else:
+        logger.info("Full day change complete.", guild_id=None)
 
 
 # When a user updates their roles, check if they have the required roles
