@@ -318,10 +318,11 @@ class GuildLoggerAdapter(logging.LoggerAdapter):
         # Pop guild_id from kwargs to prevent it from being passed to the final log call
         guild_id = kwargs.pop("guild_id", None)
 
-        # Determine the dynamic logger name
+        # The dot makes this a child of the base logger, so it inherits its handler
+        # and level; any other separator gets a parentless logger and no handler.
         target_name = self.logger.name
         if guild_id is not None:
-            target_name = f"{self.logger.name} - {guild_id}"
+            target_name = f"{self.logger.name}.{guild_id}"
 
         # Get the target logger and call its log method
         target_logger = logging.getLogger(target_name)
