@@ -1904,11 +1904,9 @@ async def _day_change_for_guild(guild: discord.Guild) -> None:
         found: bool = False
         previous_justice_ids: set[int] = set()
         if justice_channel is None:
-            bot_role: discord.Role | None = discord.utils.get(
-                guild.roles, name=bot.user.name
-            )
+            bot_role: discord.Role | None = guild.self_role
             assert bot_role is not None, (
-                f"Role with bot name '{bot.user.name}' not found in guild '{guild.name}'."
+                f"No role is managed by the bot in guild '{guild.name}'."
             )
             justice_channel = await justice_channel_category.create_text_channel(
                 JUSTICE_CHANNEL_NAME,
