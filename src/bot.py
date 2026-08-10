@@ -10,6 +10,8 @@ Generating Discord OAuth2 Link:
   - General: View Audit Log, Manage Roles, Manage Channels, Ban Members, Change Nickname, Moderate Members
   - Text: Send Messages, Send Messages in Threads, Manage Messages, Read Message History
   - Voice: None required.
+
+View Channels is left out on purpose. The bot sees what @everyone sees, so a server grants it access to a restricted channel the same way it grants a member, and the bot permits itself explicitly on the channels it creates for itself.
 """
 
 import asyncio
