@@ -1916,7 +1916,13 @@ async def _day_change_for_guild(guild: discord.Guild) -> None:
                         create_public_threads=False,
                         create_private_threads=False,
                     ),
-                    bot_role: discord.PermissionOverwrite(send_messages=True),
+                    # The bot's access must not depend on what @everyone is allowed.
+                    bot_role: discord.PermissionOverwrite(
+                        read_messages=True,
+                        read_message_history=True,
+                        send_messages=True,
+                        manage_messages=True,
+                    ),
                 },
             )
         else:
