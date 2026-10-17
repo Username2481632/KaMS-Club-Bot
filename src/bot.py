@@ -1270,6 +1270,30 @@ async def on_ready() -> None:
         await shutdown()
         return
 
+    # Read before any handler acts on these guilds: a data file that cannot be read stops
+    # the bot rather than leaving it running without its data, and the welcome cutoff is in
+    # place before anyone can be welcomed.
+    try:
+        dta: FullDataType = await load_data()
+    except Exception as e:
+        logger.error(f"Failed to load data file {DATA_FILE}: {str(e)}", guild_id=None)
+        await shutdown()
+        return
+    after_time = datetime.datetime.fromtimestamp(
+        max(
+            [discord.utils.DISCORD_EPOCH / 1000]
+            + [
+                member_entry.latest_message_time
+                for g_id in guilds
+                for member_entry in dta.get(g_id, {}).values()
+            ]
+        )
+    )
+    # With no recorded activity, the bot has never watched these servers, and only
+    # members who join from now on are new.
+    if after_time.timestamp() > discord.utils.DISCORD_EPOCH / 1000:
+        welcome_cutoff = after_time.astimezone(datetime.timezone.utc)
+
     # Atomically set GUILDS after all validation succeeds
     # Mutate existing GUILDS so a missing name raises instead of silently creating a local.
     GUILDS.clear()
@@ -1547,20 +1571,12 @@ async def on_ready() -> None:
                 was_modified = True
         if was_modified:
             await save_data(dta)
-        after_time = datetime.datetime.fromtimestamp(
-            max(
-                [discord.utils.DISCORD_EPOCH / 1000]
-                + [
-                    member_entry.latest_message_time
-                    for g in guild_objects
-                    for member_entry in dta[g.id].values()
-                ]
-            )
-        )
-        # With no recorded activity, the bot has never watched these servers, and only
-        # members who join from now on are new.
-        if after_time.timestamp() > discord.utils.DISCORD_EPOCH / 1000:
-            welcome_cutoff = after_time.astimezone(datetime.timezone.utc)
+        # Members who joined while the bot was down are welcomed now rather than at the
+        # day change: a restart before then would move the cutoff past them.
+        for g in guild_objects:
+            for member in g.members:
+                if not member.bot and member.id not in dta[g.id]:
+                    await _on_member_join_impl(member, dta, g)
 
     # Collect all message generators with duplicate prevention
     processed_channels = set()
@@ -1627,7 +1643,12 @@ async def _on_member_join_impl(
             )
         return
     if message_sent:
-        if welcome_dm and not member.bot and member.joined_at > welcome_cutoff:
+        if (
+            welcome_dm
+            and not member.bot
+            and member.joined_at is not None
+            and member.joined_at > welcome_cutoff
+        ):
             # DM the member
             sending_message: str = ""
             # If the member joined over 5 minutes ago
