@@ -587,9 +587,15 @@ async def on_message(message: discord.Message, override: bool = False) -> None:
     if not is_initialized and not override or message.guild is None:
         return
     # update the user's [latest_message_time] and [conversation_start_time] in the data file
-    author_id: int = message.author.id
-    if message.author == bot.user and message.mentions:
-        author_id = message.mentions[0].id
+    author: discord.Member | discord.User = message.author
+    if message.author == bot.user and message.raw_mentions:
+        # A vote announcement opens with the voter's mention. raw_mentions follows the text,
+        # where the order of mentions is Discord's and not promised.
+        author = next(
+            (memb for memb in message.mentions if memb.id == message.raw_mentions[0]),
+            message.author,
+        )
+    author_id: int = author.id
 
     async with data_lock:
         data: FullDataType = await load_data()
@@ -597,7 +603,7 @@ async def on_message(message: discord.Message, override: bool = False) -> None:
         if message.guild.id not in data:
             data[message.guild.id] = {}
         if author_id not in data[message.guild.id]:
-            await _on_member_join_impl(message.author, data, message.guild)
+            await _on_member_join_impl(author, data, message.guild)
 
         # Get the timestamp of the message (use edited_at if available, else use created_at)
         message_timestamp: float = (
