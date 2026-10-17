@@ -787,8 +787,9 @@ class RequestBanModal(discord.ui.Modal):
             "reason": reason,
         }
         save_ban_requests(ban_requests)
-        async with data_lock:
-            data: FullDataType = await load_data()
+        # Only read, which the atomic save makes safe without the lock; waiting for it could
+        # outlast the 3 s Discord allows for the reply.
+        data: FullDataType = await load_data()
         justice_ids: list[int] = [
             justice.id
             for justice in get_justices(data[interaction.guild.id], interaction.guild)
