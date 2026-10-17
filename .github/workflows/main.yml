@@ -41,14 +41,14 @@ jobs:
           rm: true
           strip_components: 1
 
-      - name: Deploy bot service file to Raspberry Pi
+      - name: Deploy bot service files to Raspberry Pi
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          source: "kams-bot@.service"
+          source: "kams-bot@.service,kams-bot-startup-deploy@.service"
           target: "~/KaMS-Club-Bot/"
           overwrite: true
 
@@ -97,16 +97,20 @@ jobs:
               rm -f ~/KaMS-Club-Bot/ip-updater/ip-updater@.timer
             fi
 
-            if [ -f ~/KaMS-Club-Bot/kams-bot@.service ]; then
-              if ! diff -q ~/KaMS-Club-Bot/kams-bot@.service /etc/systemd/system/kams-bot@.service >/dev/null 2>&1; then
-                echo "Bot service file has changed, updating..."
-                sudo cp ~/KaMS-Club-Bot/kams-bot@.service /etc/systemd/system/
-                sudo systemctl daemon-reload
-                echo "Bot service updated and reloaded"
-              else
-                echo "No changes to the bot service file"
+            BOT_UNITS_CHANGED=false
+            for unit in kams-bot@.service kams-bot-startup-deploy@.service; do
+              if ! diff -q ~/KaMS-Club-Bot/$unit /etc/systemd/system/$unit >/dev/null 2>&1; then
+                echo "$unit has changed, updating..."
+                sudo cp ~/KaMS-Club-Bot/$unit /etc/systemd/system/
+                BOT_UNITS_CHANGED=true
               fi
-              rm -f ~/KaMS-Club-Bot/kams-bot@.service
+              rm -f ~/KaMS-Club-Bot/$unit
+            done
+            if [ "$BOT_UNITS_CHANGED" = true ]; then
+              sudo systemctl daemon-reload
+              echo "Bot services updated and reloaded"
+            else
+              echo "No changes to the bot service files"
             fi
 
       - name: Check if upgrade script is non-empty
@@ -165,7 +169,7 @@ jobs:
             
             # The bot reads its token from .env, as it does when run from a checkout.
             (umask 077 && echo "DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }}" > .env)
-            sudo systemctl enable kams-bot@$(whoami).service
+            sudo systemctl enable kams-bot@$(whoami).service kams-bot-startup-deploy@$(whoami).service
             # A deploy starts the bot even after its restart limit was hit.
             sudo systemctl reset-failed kams-bot@$(whoami).service
             sudo systemctl restart kams-bot@$(whoami).service
