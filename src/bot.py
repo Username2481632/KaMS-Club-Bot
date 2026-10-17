@@ -87,7 +87,7 @@ def TIMEOUT_RESUME_MESSAGE(
     server_name: str, remaining_timeout: datetime.timedelta
 ) -> str:
     hours: float = math.ceil(remaining_timeout.seconds / 360.0) / 10.0
-    return f"Your role timeout in **{server_name}** has been removed, but you still have an earlier timeout of {f'{remaining_timeout.days} day{"" if remaining_timeout.days == 1 else "s"}' if remaining_timeout.days > 0 else ''} and {hours} hour{'' if hours == 1 else 's'} to serve."
+    return f"Your role timeout in **{server_name}** has been removed, but you still have an earlier timeout of {f'{remaining_timeout.days} day{"" if remaining_timeout.days == 1 else "s"} and ' if remaining_timeout.days > 0 else ''}{hours} hour{'' if hours == 1 else 's'} to serve."
 
 
 LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
