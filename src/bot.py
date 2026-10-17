@@ -729,7 +729,7 @@ class SetSlowmodeModal(discord.ui.Modal):
         except discord.errors.Forbidden:
             # noinspection PyUnresolvedReferences
             await interaction.response.edit_message(
-                f"{ERROR_SYMBOL} I do not have permission to set slowmode in this channel."
+                content=f"{ERROR_SYMBOL} I do not have permission to set slowmode in this channel."
             )
 
 
@@ -774,6 +774,8 @@ class RequestBanModal(discord.ui.Modal):
         reason = self.reason.value
         # Open file ban_requests.json, create it if it doesn't exist
         ban_requests: BanRequestsType = read_ban_requests()
+        if interaction.guild.id not in ban_requests:
+            ban_requests[interaction.guild.id] = {}
         if target_object.id not in ban_requests[interaction.guild.id]:
             ban_requests[interaction.guild.id][target_object.id] = {}
         existing_request: dict[str, bool | str] | None = ban_requests[
@@ -793,11 +795,13 @@ class RequestBanModal(discord.ui.Modal):
             justice.id
             for justice in get_justices(data[interaction.guild.id], interaction.guild)
         ]
+        target_requests: dict[int, BanRequestType] = ban_requests[interaction.guild.id][
+            target_object.id
+        ]
         if self.ban_bool:
             # If all current justices have requested a ban, ban the user
             if len(justice_ids) == JUSTICE_COUNT and all(
-                justice_id in ban_requests[interaction.guild.id][target_object.id]
-                and ban_requests[interaction.guild.id][target_object.id][justice_id]
+                justice_id in target_requests and target_requests[justice_id]["request"]
                 for justice_id in justice_ids
             ):
                 # Ban the user
@@ -808,23 +812,36 @@ class RequestBanModal(discord.ui.Modal):
                 except discord.errors.Forbidden:
                     # noinspection PyUnresolvedReferences
                     await interaction.response.edit_message(
-                        f"{ERROR_SYMBOL} Sorry, I am unable to ban this user."
+                        content=f"{ERROR_SYMBOL} Sorry, I am unable to ban this user."
                     )
+                    return
         else:
             # If 2/3 of current justices have requested an unban, unban the user
-            if sum(
-                1
-                for justice_id in justice_ids
-                if justice_id in ban_requests[interaction.guild.id][target_object.id]
-                and not ban_requests[interaction.guild.id][target_object.id][justice_id]
-            ) >= 2 * len(justice_ids) / 3 and any(
-                ban.user.id == target_object.id
-                for ban in [ban async for ban in interaction.guild.bans()]
-            ):
-                # Unban the user
-                await interaction.guild.unban(
-                    target_object, reason="Requested by justices."
+            try:
+                if (
+                    justice_ids
+                    and sum(
+                        1
+                        for justice_id in justice_ids
+                        if justice_id in target_requests
+                        and not target_requests[justice_id]["request"]
+                    )
+                    >= 2 * len(justice_ids) / 3
+                    and any(
+                        ban.user.id == target_object.id
+                        for ban in [ban async for ban in interaction.guild.bans()]
+                    )
+                ):
+                    # Unban the user
+                    await interaction.guild.unban(
+                        target_object, reason="Requested by justices."
+                    )
+            except discord.errors.Forbidden:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.edit_message(
+                    content=f"{ERROR_SYMBOL} Sorry, I am unable to unban this user."
                 )
+                return
         # noinspection PyUnresolvedReferences
         await interaction.response.edit_message(
             content=f'{SUCCESS_SYMBOL} {f"{'Unb' if not self.ban_bool else 'B'}an r" if not request_changed else "R"}equest {"submitted" if not existing_request else "updated" + (f" from **{'ban' if existing_request['request'] else 'unban'}** to **{'ban' if self.ban_bool else 'unban'}**" if request_changed else "")} for user {self.target.value} ("{target_object.display_name}").'
@@ -847,7 +864,7 @@ class BanUnbanSelect(discord.ui.Select):
         if choice == "cancel":
             ban_requests: BanRequestsType = read_ban_requests()
             user_requests: list[tuple[int, str, bool]] = []
-            for target_id in ban_requests[interaction.guild.id]:
+            for target_id in ban_requests.get(interaction.guild.id, {}):
                 if interaction.user.id in ban_requests[interaction.guild.id][target_id]:
                     target_object: discord.User = await bot.fetch_user(target_id)
                     user_requests.append(
