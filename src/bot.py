@@ -1408,11 +1408,8 @@ async def on_ready() -> None:
                 target.id
             )
             # If the target is not in the server, still process the vote but just don't take immediate action
-            if (
-                target.id not in data[interaction.guild.id]
-                and target_member is not None
-            ):
-                await _on_member_join_impl(target_member, data, interaction.guild)
+            if target.id not in data[interaction.guild.id]:
+                await _on_member_join_impl(target, data, interaction.guild)
             if fraction_severity < -1 or fraction_severity > 1:
                 # noinspection PyUnresolvedReferences
                 await interaction.response.send_message(
@@ -1639,7 +1636,7 @@ async def _on_member_join_impl(
     if not hasattr(member, "guild"):
         if welcome_dm:
             logger.info(
-                f"Unable to welcome user {member.display_name} (id={member.id}) because they are no longer a member. Data has been updated.",
+                f"Unable to welcome user {member.display_name} (id={member.id}) because they are not a member. Data has been updated.",
                 guild_id=guild.id,
             )
         return
