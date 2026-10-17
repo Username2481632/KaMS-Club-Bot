@@ -529,36 +529,49 @@ async def set_respect_role(
                 break
             i = True
 
-    if score >= 0.0:
-        if disrespectful_role in member.roles:
-            await member.remove_roles(
-                disrespectful_role, reason=f"Respect score of {score} is positive."
-            )
-        if respectful_role not in member.roles:
-            await member.add_roles(
-                respectful_role, reason=f"Respect score of {score} is positive."
-            )
-            logger.info(
-                f"{member.display_name} has been upgraded to '{RESPECTFUL_ROLE_NAME}'.",
-                guild_id=guild.id,
-            )
-    elif disrespectful_role not in member.roles and respectful_role not in member.roles:
-        await member.add_roles(disrespectful_role, reason="Bad respect score.")
-        logger.info(
-            f"{member.display_name} has been assigned '{DISRESPECTFUL_ROLE_NAME}' because their roles were missing and their respect score is negative.",
-            guild_id=guild.id,
-        )
-    elif score < min(-1.0, -0.01 * sum(not memb.bot for memb in guild.members)):
-        if respectful_role in member.roles:
-            await member.remove_roles(
-                respectful_role, reason=f"Respect score of {score} is unacceptably bad."
-            )
-            if disrespectful_role not in member.roles:
-                await member.add_roles(disrespectful_role)
+    if disrespectful_role is None or respectful_role is None:
+        return
+
+    try:
+        if score >= 0.0:
+            if disrespectful_role in member.roles:
+                await member.remove_roles(
+                    disrespectful_role, reason=f"Respect score of {score} is positive."
+                )
+            if respectful_role not in member.roles:
+                await member.add_roles(
+                    respectful_role, reason=f"Respect score of {score} is positive."
+                )
                 logger.info(
-                    f"{member.display_name} has been downgraded to '{DISRESPECTFUL_ROLE_NAME}'.",
+                    f"{member.display_name} has been upgraded to '{RESPECTFUL_ROLE_NAME}'.",
                     guild_id=guild.id,
                 )
+        elif (
+            disrespectful_role not in member.roles
+            and respectful_role not in member.roles
+        ):
+            await member.add_roles(disrespectful_role, reason="Bad respect score.")
+            logger.info(
+                f"{member.display_name} has been assigned '{DISRESPECTFUL_ROLE_NAME}' because their roles were missing and their respect score is negative.",
+                guild_id=guild.id,
+            )
+        elif score < min(-1.0, -0.01 * sum(not memb.bot for memb in guild.members)):
+            if respectful_role in member.roles:
+                await member.remove_roles(
+                    respectful_role,
+                    reason=f"Respect score of {score} is unacceptably bad.",
+                )
+                if disrespectful_role not in member.roles:
+                    await member.add_roles(disrespectful_role)
+                    logger.info(
+                        f"{member.display_name} has been downgraded to '{DISRESPECTFUL_ROLE_NAME}'.",
+                        guild_id=guild.id,
+                    )
+    except discord.Forbidden:
+        logger.error(
+            f'Missing permissions to update the respect roles of "{member.display_name}" (id={member.id})',
+            guild_id=guild.id,
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -1659,16 +1672,21 @@ async def set_justice_role(member: discord.Member, justice_ids: list[int]) -> No
     :param justice_ids:
     :return:
     """
-    # If the Justice role does not exist, log the error and timestamp then return
-    justice_role: discord.Role = await get_justice_role(member.guild)
-    if member.id in justice_ids and not any(
-        role.name == JUSTICE_ROLE_NAME for role in member.roles
-    ):
-        await member.add_roles(justice_role)
-    elif member.id not in justice_ids and any(
-        role.name == JUSTICE_ROLE_NAME for role in member.roles
-    ):
-        await member.remove_roles(justice_role)
+    try:
+        justice_role: discord.Role = await get_justice_role(member.guild)
+        if member.id in justice_ids and not any(
+            role.name == JUSTICE_ROLE_NAME for role in member.roles
+        ):
+            await member.add_roles(justice_role)
+        elif member.id not in justice_ids and any(
+            role.name == JUSTICE_ROLE_NAME for role in member.roles
+        ):
+            await member.remove_roles(justice_role)
+    except discord.Forbidden:
+        logger.error(
+            f'Missing permissions to update the {JUSTICE_ROLE_NAME} role of "{member.display_name}" (id={member.id})',
+            guild_id=member.guild.id,
+        )
 
 
 def justice_score(
