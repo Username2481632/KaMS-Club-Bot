@@ -960,6 +960,12 @@ async def dm_member(
             f'Forbidden to send message to "{member.display_name}" (id={member.id}).',
             guild_id=guild_id,
         )
+    except discord.errors.HTTPException as e:
+        # Discord refuses to open a DM with a bot with 400 (50007) rather than 403.
+        logger.error(
+            f'Failed to send message to "{member.display_name}" (id={member.id}): {e}',
+            guild_id=guild_id,
+        )
 
 
 async def message_generator(
