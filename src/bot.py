@@ -787,9 +787,14 @@ class RequestBanModal(discord.ui.Modal):
             "reason": reason,
         }
         save_ban_requests(ban_requests)
+        async with data_lock:
+            data: FullDataType = await load_data()
+        justice_ids: list[int] = [
+            justice.id
+            for justice in get_justices(data[interaction.guild.id], interaction.guild)
+        ]
         if self.ban_bool:
             # If all current justices have requested a ban, ban the user
-            justice_ids: list[int] = await get_justice_ids(interaction.guild)
             if len(justice_ids) == JUSTICE_COUNT and all(
                 justice_id in ban_requests[interaction.guild.id][target_object.id]
                 and ban_requests[interaction.guild.id][target_object.id][justice_id]
@@ -807,7 +812,6 @@ class RequestBanModal(discord.ui.Modal):
                     )
         else:
             # If 2/3 of current justices have requested an unban, unban the user
-            justice_ids: list[int] = await get_justice_ids(interaction.guild)
             if sum(
                 1
                 for justice_id in justice_ids
@@ -1570,28 +1574,6 @@ async def on_ready() -> None:
     logger.info("Initialization complete.", guild_id=None)
 
 
-async def get_justice_ids(guild: discord.Guild) -> list[int]:
-    """
-    Get the justice ids from the justices channel.
-
-    :return:
-    """
-    # Fetch justice ids from the justices channel
-    justice_channel_category: discord.CategoryChannel | None = discord.utils.get(
-        guild.categories, name=JUSTICE_CHANNEL_CATEGORY
-    )
-    if justice_channel_category is not None:
-        justice_channel: discord.TextChannel | None = discord.utils.get(
-            justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME
-        )
-        if justice_channel is not None:
-            async for message in justice_channel.history(limit=1):
-                if message.author == bot.user:
-                    # Extract the mentions from the message
-                    return [mention.id for mention in message.mentions]
-    return []
-
-
 @bot.event
 async def on_member_join(member: discord.Member) -> None:
     """
@@ -1642,7 +1624,9 @@ async def _on_member_join_impl(
         else:
             message_sent = False
     else:
-        await set_justice_role(member, await get_justice_ids(guild))
+        await set_justice_role(
+            member, [justice.id for justice in get_justices(data[guild.id], guild)]
+        )
 
     await set_respect_role(
         guild,
@@ -1699,6 +1683,31 @@ def justice_score(
     :return:
     """
     return server_data[member.id].deep_score, member.joined_at
+
+
+def get_justices(
+    server_data: ServerDataType, guild: discord.Guild
+) -> list[discord.Member]:
+    """
+    Determine the justices from the data. The #justices message only displays them.
+    :param server_data:
+    :param guild:
+    :return: The justices, highest justice score first.
+    """
+    justices: list[discord.Member] = []
+    if len(server_data.keys()) >= JUSTICE_COUNT * 5:
+        justices = sorted(
+            [
+                member
+                for member in guild.members
+                if not member.bot and member.id in server_data
+            ],
+            key=lambda memb: justice_score(server_data, memb),
+            reverse=True,
+        )[:JUSTICE_COUNT]
+        if server_data[justices[-1].id].deep_score <= JUSTICE_DEEP_SCORE_REQUIREMENT:
+            justices = []
+    return justices
 
 
 def is_timeout_prolongation_log(
@@ -1852,19 +1861,7 @@ async def _day_change_for_guild(guild: discord.Guild) -> None:
                 - CREDIBILITY_DECAY * CREDIBILITY_RATIO,
             )
 
-        # Calculate justices
-        justices: list[discord.Member] = []
-        if len(data[guild.id].keys()) >= JUSTICE_COUNT * 5:
-            justices = sorted(
-                members,
-                key=lambda memb: justice_score(data[guild.id], memb),
-                reverse=True,
-            )[:JUSTICE_COUNT]
-            if (
-                data[guild.id][justices[-1].id].deep_score
-                <= JUSTICE_DEEP_SCORE_REQUIREMENT
-            ):
-                justices = []
+        justices: list[discord.Member] = get_justices(data[guild.id], guild)
 
         log_deletions: list[int] = []
         for member_id in data[guild.id]:
