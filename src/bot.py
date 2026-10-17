@@ -2089,6 +2089,9 @@ async def day_change() -> None:
     Loop that runs every day to update the data and assign roles.
     :return:
     """
+    if shutdown_event.is_set():
+        logger.info("Shutdown requested. Skipping day change.", guild_id=None)
+        return
     logger.info("Day change has started.")
     async with data_lock:
         backup_file_path: str = os.path.abspath(
