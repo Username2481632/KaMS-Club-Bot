@@ -335,6 +335,13 @@ logger = GuildLoggerAdapter(logger, {})
 
 guild_objects: list[discord.Guild] = []
 is_initialized = False
+# Members who joined before this were there while the bot was watching, so finding no data
+# for one of them means the data is missing, not that they are new. Moved back at startup
+# to the last activity the data records, so members who joined while the bot was down are
+# still welcomed.
+welcome_cutoff: datetime.datetime = datetime.datetime.fromtimestamp(
+    start_time, datetime.timezone.utc
+)
 # Extract x and y coordinates from the dictionary
 x_coords: numpy.ndarray = numpy.array(list(TIMEOUT_DURATION_OUTLINE.keys()))
 y_coords: numpy.ndarray = numpy.array(list(TIMEOUT_DURATION_OUTLINE.values()))
@@ -1071,7 +1078,7 @@ async def on_ready() -> None:
     """
     Event that runs when the bot is ready, syncing the commands and starting the day_change loop.
     """
-    global is_initialized, guild_objects, GUILDS
+    global is_initialized, guild_objects, GUILDS, welcome_cutoff
     if is_initialized:
         return
 
@@ -1513,6 +1520,10 @@ async def on_ready() -> None:
                 ]
             )
         )
+        # With no recorded activity, the bot has never watched these servers, and only
+        # members who join from now on are new.
+        if after_time.timestamp() > discord.utils.DISCORD_EPOCH / 1000:
+            welcome_cutoff = after_time.astimezone(datetime.timezone.utc)
 
     # Collect all message generators with duplicate prevention
     processed_channels = set()
@@ -1601,15 +1612,14 @@ async def _on_member_join_impl(
             )
         return
     if message_sent:
-        if welcome_dm:
+        if welcome_dm and not member.bot and member.joined_at > welcome_cutoff:
             # DM the member
             sending_message: str = ""
             # If the member joined over 5 minutes ago
             if (discord.utils.utcnow() - member.joined_at).total_seconds() > 300:
                 sending_message += "With apologies for the delay,\n"
             sending_message += welcome_dm
-            if member.id != bot.user.id:
-                await dm_member(member, sending_message, guild.id)
+            await dm_member(member, sending_message, guild.id)
         else:
             message_sent = False
     else:
@@ -1628,9 +1638,7 @@ async def _on_member_join_impl(
     else:
         welcome_status = "recognized as a new server member"
         if welcome_dm:
-            welcome_status += (
-                " (no message was sent because this isn't their first time)"
-            )
+            welcome_status += f" (no message was sent because {'they are a bot' if member.bot else "they aren't new to the server"})"
 
     logger.info(
         f"{member.display_name} has been {welcome_status} and their roles have been set.",
