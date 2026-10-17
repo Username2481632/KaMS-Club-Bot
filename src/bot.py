@@ -2091,6 +2091,9 @@ async def day_change() -> None:
     failed_guilds: list[int] = []
     for guild in guild_objects:
         assert guild is not None
+        if shutdown_event.is_set():
+            logger.info("Shutdown requested. Halting day change.", guild_id=None)
+            return
 
         try:
             await _day_change_for_guild(guild)
