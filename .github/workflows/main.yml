@@ -17,17 +17,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Kill existing bot.py process
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.PI_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            pkill -f "[b]ot.py" || [ $? -eq 1 ]
-            while pgrep -f "[b]ot.py" > /dev/null; do sleep 1; done
-
       - name: Deploy src directory to Raspberry Pi
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -51,6 +40,17 @@ jobs:
           target: "~/KaMS-Club-Bot/ip-updater/"
           rm: true
           strip_components: 1
+
+      - name: Deploy bot service file to Raspberry Pi
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.PI_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "kams-bot@.service"
+          target: "~/KaMS-Club-Bot/"
+          overwrite: true
 
       - name: Update systemd services if changed
         uses: appleboy/ssh-action@v1.0.3
@@ -97,6 +97,18 @@ jobs:
               rm -f ~/KaMS-Club-Bot/ip-updater/ip-updater@.timer
             fi
 
+            if [ -f ~/KaMS-Club-Bot/kams-bot@.service ]; then
+              if ! diff -q ~/KaMS-Club-Bot/kams-bot@.service /etc/systemd/system/kams-bot@.service >/dev/null 2>&1; then
+                echo "Bot service file has changed, updating..."
+                sudo cp ~/KaMS-Club-Bot/kams-bot@.service /etc/systemd/system/
+                sudo systemctl daemon-reload
+                echo "Bot service updated and reloaded"
+              else
+                echo "No changes to the bot service file"
+              fi
+              rm -f ~/KaMS-Club-Bot/kams-bot@.service
+            fi
+
       - name: Check if upgrade script is non-empty
         id: check_script
         run: |
@@ -132,7 +144,7 @@ jobs:
             ./upgrade_script.sh
             rm ~/KaMS-Club-Bot/upgrade_script.sh
 
-      - name: Install dependencies on Raspberry Pi and run bot.py
+      - name: Install dependencies on Raspberry Pi and restart the bot
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.HOST }}
@@ -151,5 +163,9 @@ jobs:
             pip install --upgrade pip
             pip install -r <(curl -sL "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/requirements.txt")
             
-            export DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}"
-            nohup python3.12 src/bot.py >> ./bot.log 2>&1 &
+            # The bot reads its token from .env, as it does when run from a checkout.
+            (umask 077 && echo "DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }}" > .env)
+            sudo systemctl enable kams-bot@$(whoami).service
+            # A deploy starts the bot even after its restart limit was hit.
+            sudo systemctl reset-failed kams-bot@$(whoami).service
+            sudo systemctl restart kams-bot@$(whoami).service

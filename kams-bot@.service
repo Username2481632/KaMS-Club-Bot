@@ -1,0 +1,20 @@
+[Unit]
+Description=KaMS Club Bot
+After=network-online.target
+Wants=network-online.target
+# Every start identifies with Discord, which allows a bot 1000 a day, so a bot
+# that keeps crashing is left stopped rather than restarted without end.
+StartLimitIntervalSec=1h
+StartLimitBurst=10
+
+[Service]
+User=%i
+WorkingDirectory=/home/%i/KaMS-Club-Bot
+ExecStart=/home/%i/KaMS-Club-Bot/venv/bin/python3.12 /home/%i/KaMS-Club-Bot/src/bot.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:/home/%i/KaMS-Club-Bot/bot.log
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target
