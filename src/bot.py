@@ -1681,18 +1681,18 @@ def is_timeout_prolongation_log(
     :param target_member_ids:
     :return:
     """
-    if message.author.id == ELARA_LOGGER_ID:
-        for embed in message.embeds:
-            if (
-                embed.title != "Member Timeout: Updated"
-                or not any(
-                    str(memb_id) in embed.fields[0].value
-                    for memb_id in target_member_ids
-                )
-                or str(bot.user.id) not in embed.fields[1].value
-                or embed.fields[3].value != ROLE_TIMEOUT_REASON
-            ):
-                return False
+    if message.author.id != ELARA_LOGGER_ID or not message.embeds:
+        return False
+    for embed in message.embeds:
+        if (
+            embed.title != "Member Timeout: Updated"
+            or not any(
+                str(memb_id) in embed.fields[0].value for memb_id in target_member_ids
+            )
+            or str(bot.user.id) not in embed.fields[1].value
+            or embed.fields[3].value != ROLE_TIMEOUT_REASON
+        ):
+            return False
     return True
 
 
