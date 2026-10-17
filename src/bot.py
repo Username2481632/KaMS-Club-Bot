@@ -725,21 +725,28 @@ class SetSlowmodeModal(discord.ui.Modal):
                 slowmode_delay=length,
                 reason=f'Set by user {interaction.user.id} ("{interaction.user.display_name}") via Justice Toolbox',
             )
-            # noinspection PyUnresolvedReferences
-            await interaction.response.edit_message(
-                content=f"{SUCCESS_SYMBOL} Slowmode for {interaction.channel.mention} has been set to {length} second{'s' if length != 1 else ''} {f'with a reset time of {reset_time} minutes' if reset_time is not None else ''}."
-            )
-            if reset_time is not None:
-                await asyncio.sleep(reset_time * 60.0)
-                await interaction.channel.edit(
-                    slowmode_delay=0,
-                    reason=f"Reset from command by user {interaction.user.id} via Justice Toolbox",
-                )
         except discord.errors.Forbidden:
             # noinspection PyUnresolvedReferences
             await interaction.response.edit_message(
                 content=f"{ERROR_SYMBOL} I do not have permission to set slowmode in this channel."
             )
+            return
+        # noinspection PyUnresolvedReferences
+        await interaction.response.edit_message(
+            content=f"{SUCCESS_SYMBOL} Slowmode for {interaction.channel.mention} has been set to {length} second{'s' if length != 1 else ''} {f'with a reset time of {reset_time} minutes' if reset_time is not None else ''}."
+        )
+        if reset_time is not None:
+            await asyncio.sleep(reset_time * 60.0)
+            try:
+                await interaction.channel.edit(
+                    slowmode_delay=0,
+                    reason=f"Reset from command by user {interaction.user.id} via Justice Toolbox",
+                )
+            except discord.errors.Forbidden:
+                logger.error(
+                    f"Missing permissions to reset slowmode in #{interaction.channel.name}",
+                    guild_id=interaction.guild.id,
+                )
 
 
 BanRequestType = dict[str, bool | str]  # {"request": bool, "reason": str}
