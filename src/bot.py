@@ -584,7 +584,12 @@ async def on_message(message: discord.Message, override: bool = False) -> None:
     :param override:
     :param message:
     """
-    if not is_initialized and not override or message.guild is None:
+    if (
+        not is_initialized
+        and not override
+        or message.guild is None
+        or message.guild.id not in GUILDS
+    ):
         return
     # update the user's [latest_message_time] and [conversation_start_time] in the data file
     author: discord.Member | discord.User = message.author
@@ -1616,6 +1621,8 @@ async def on_member_join(member: discord.Member) -> None:
 
     :param member: The member who joined
     """
+    if member.guild.id not in GUILDS:
+        return
     async with data_lock:
         data: FullDataType = await load_data()
         if member.guild.id not in data:
