@@ -162,7 +162,7 @@ class GuildConfigDictType(typing.TypedDict):
 
     welcome_dm: str | None
     purge_polls: bool
-    logger: LoggerConfig
+    logger: dict
     required_roles: list[list[int]]
 
 
@@ -191,7 +191,7 @@ class GuildConfig:
         return {
             "welcome_dm": self.welcome_dm,
             "purge_polls": self.purge_polls,
-            "logger": self.logger,
+            "logger": self.logger.to_dict(),
             "required_roles": [list(roles) for roles in self.required_roles],
         }
 
@@ -1124,11 +1124,10 @@ async def on_ready() -> None:
 
     # Config file check and creation
     if not os.path.exists(CONFIG_FILE):
-        json.dump(
-            {str(guild.id): GuildConfig().to_dict() for guild in bot.guilds},
-            open(CONFIG_FILE, "w"),
-            indent=2,
-        )
+        config_data: dict = {
+            str(guild.id): GuildConfig().to_dict() for guild in bot.guilds
+        }
+        json.dump(config_data, open(CONFIG_FILE, "w"), indent=2)
         logger.info(
             "Config file not found. Created a default one with all current guilds.",
             guild_id=None,
