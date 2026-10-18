@@ -6,4 +6,8 @@ Type=oneshot
 User=%i
 # Only a running bot checks in, so the alert fires when the bot stops as well as when the
 # Pi or its network does.
-ExecStart=/bin/bash -c 'if systemctl is-active --quiet kams-bot@%i.service; then curl -fsS -m 10 --retry 5 -o /dev/null "$(cat /home/%i/.config/KaMS-Club-Bot/healthcheck_url)"; fi'
+ExecStart=/bin/bash -c 'if systemctl is-active --quiet kams-bot@%i.service; then curl -fsS -m 10 -o /dev/null "$(cat /home/%i/.config/KaMS-Club-Bot/healthcheck_url)"; fi'
+# A run every minute would fill the journal with its start and finish; a failed check-in
+# still shows.
+SyslogLevel=warning
+LogLevelMax=notice

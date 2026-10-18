@@ -1,9 +1,12 @@
 [Unit]
-Description=Check in with the down alert every 10 minutes
+Description=Check in with the down alert every minute
 
 [Timer]
-OnBootSec=5min
-OnUnitActiveSec=10min
+# A check-in missed while the bot restarts then costs a minute, so the alert's grace measures
+# how long the bot has been down rather than when its next check-in happened to fall.
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=1s
 
 [Install]
 WantedBy=timers.target
