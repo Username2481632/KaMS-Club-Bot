@@ -63,6 +63,9 @@ data.json
 data_backup/
 ban_requests.json
 config.json
+config.draft.json
+*.sha256
+*.tmp
 
 # Images
 images/

@@ -12,11 +12,17 @@ Generating Discord OAuth2 Link:
   - Voice: None required.
 
 View Channels is left out on purpose. The bot sees what @everyone sees, so a server grants it access to a restricted channel the same way it grants a member, and the bot permits itself explicitly on the channels it creates for itself.
+
+Setting the bot up:
+- Put its token in a .env file next to src/: DISCORD_BOT_TOKEN=<token>
+- Once the bot is in its servers, run `python src/bot.py --init`. It writes config.draft.json, listing every server the bot is in with each setting left null. Set them all (an empty welcome_dm sends no welcome), remove any server the bot should not serve, and run --init again, as often as it takes. When every setting is set, it creates data.json and ban_requests.json, each with a .sha256 fingerprint beside it, and turns the draft into config.json.
+- Then run the bot without arguments. It runs only with all of these files in place and as it left them: a file that goes missing or changes stops it, rather than being started over or used unseen. To change one by hand, stop the bot, make the change, and run --init to accept it.
 """
 
 import asyncio
 import datetime
 import fractions
+import hashlib
 import heapq
 import json
 import logging
@@ -25,12 +31,12 @@ import os
 import shutil
 import signal
 import socket
+import sys
 import time
 import typing
 from types import FrameType
 from typing import AsyncGenerator, Callable
 
-import aiofiles
 import aiohttp
 import discord
 import numpy
@@ -51,7 +57,9 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 # Parameters
 # -----------------------------------------------------------------------------
 CONFIG_FILE: str = "../config.json"
+CONFIG_DRAFT_FILE: str = "../config.draft.json"
 DATA_FILE: str = "../data.json"
+BAN_REQUESTS_FILE: str = "../ban_requests.json"
 JUSTICE_COUNT: int = 5
 JUSTICE_CHANNEL_NAME: str = "justices"
 JUSTICE_CHANNEL_CATEGORY: str = "Information"
@@ -114,6 +122,10 @@ SEVERITY_DISPLAY_PRECISION: int = 4  # Number of decimal places to display for s
 # Record start time
 start_time: float = time.time()
 
+# Started with --init, the bot writes or completes the files it keeps instead of running.
+SETTING_UP: bool = "--init" in sys.argv
+setup_complete: bool = False
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -148,8 +160,8 @@ class LoggerConfig:
         :return:
         """
         return cls(
-            enabled=param.get("enabled", False),
-            channel_name=param.get("channel_name", "logger"),
+            enabled=param["enabled"],
+            channel_name=param["channel_name"],
         )
 
 
@@ -158,7 +170,7 @@ class GuildConfigDictType(typing.TypedDict):
     TypedDict for the guild configuration.
     """
 
-    welcome_dm: str | None
+    welcome_dm: str
     purge_polls: bool
     logger: dict
     required_roles: list[list[int]]
@@ -201,10 +213,10 @@ class GuildConfig:
         :return:
         """
         return cls(
-            wd=param.get("welcome_dm", ""),
-            pp=param.get("purge_polls", False),
-            lc=LoggerConfig.from_dict(param.get("logger", {})),
-            rr=param.get("required_roles", []),
+            wd=param["welcome_dm"],
+            pp=param["purge_polls"],
+            lc=LoggerConfig.from_dict(param["logger"]),
+            rr=param["required_roles"],
         )
 
 
@@ -251,20 +263,15 @@ class MemberEntry:
         :return:
         """
         return cls(
-            shallow_score=fractions.Fraction(data.get("shallow_score", "0")),
-            deep_score=fractions.Fraction(data.get("deep_score", "0")),
-            credibility=fractions.Fraction(data.get("credibility", "0")),
+            shallow_score=fractions.Fraction(data["shallow_score"]),
+            deep_score=fractions.Fraction(data["deep_score"]),
+            credibility=fractions.Fraction(data["credibility"]),
             opinions={
-                int(k): fractions.Fraction(v)
-                for k, v in data.get("opinions", {}).items()
+                int(k): fractions.Fraction(v) for k, v in data["opinions"].items()
             },
-            latest_message_time=data.get(
-                "latest_message_time", discord.utils.DISCORD_EPOCH / 1000
-            ),
-            conversation_start_time=data.get(
-                "conversation_start_time", discord.utils.DISCORD_EPOCH / 1000
-            ),
-            suspended_timeout=data.get("suspended_timeout"),
+            latest_message_time=data["latest_message_time"],
+            conversation_start_time=data["conversation_start_time"],
+            suspended_timeout=data["suspended_timeout"],
         )
 
     def to_dict(self) -> dict:
@@ -333,13 +340,6 @@ logger = GuildLoggerAdapter(logger, {})
 
 guild_objects: list[discord.Guild] = []
 is_initialized = False
-# Members who joined before this were there while the bot was watching, so finding no data
-# for one of them means the data is missing, not that they are new. Moved back at startup
-# to the last activity the data records, so members who joined while the bot was down are
-# still welcomed.
-welcome_cutoff: datetime.datetime = datetime.datetime.fromtimestamp(
-    start_time, datetime.timezone.utc
-)
 # Extract x and y coordinates from the dictionary
 x_coords: numpy.ndarray = numpy.array(list(TIMEOUT_DURATION_OUTLINE.keys()))
 y_coords: numpy.ndarray = numpy.array(list(TIMEOUT_DURATION_OUTLINE.values()))
@@ -353,6 +353,8 @@ y_values: numpy.ndarray = linear_interp(x_values)
 shutdown_event = asyncio.Event()
 # Initialize a lock for thread-safe file access
 data_lock = asyncio.Lock()
+# The SHA-256 of each file the bot keeps, as it last read or wrote it
+fingerprints: dict[str, str] = {}
 
 # Global guild configurations - will be initialized during bot startup
 GUILDS: GuildsType = {}
@@ -392,44 +394,207 @@ async def update_bot_nickname(guild: discord.Guild) -> None:
         logger.error(f"Error setting nickname: {e}", guild_id=guild.id)
 
 
+class DataIntegrityError(Exception):
+    """
+    A file the bot keeps is not what the bot last left in it.
+    """
+
+
+def refuse_data(problem: str) -> typing.NoReturn:
+    """
+    Stop the bot rather than act on a file that is not the bot's own.
+    :param problem:
+    """
+    logger.error(problem, guild_id=None)
+    shutdown_event.set()
+    asyncio.get_running_loop().create_task(shutdown())
+    raise DataIntegrityError(problem)
+
+
+def read_store(path: str) -> str:
+    """
+    Read a file the bot keeps, checking that it is what the bot last left in it.
+    :param path:
+    :return: The file's contents.
+    """
+    try:
+        with open(path, "rb") as file:
+            content: bytes = file.read()
+    except FileNotFoundError:
+        if path in fingerprints:
+            refuse_data(
+                f"{path} was removed by something other than the bot while it ran."
+            )
+        raise
+    digest: str = hashlib.sha256(content).hexdigest()
+    if path not in fingerprints:
+        # Read for the first time since startup, against the fingerprint of the last save.
+        with open(f"{path}.sha256") as file:
+            if file.read() != digest:
+                raise DataIntegrityError(
+                    f"{path} is not what the bot last saved: it was changed while the bot was not running. If the change is wanted, run `python src/bot.py --init` to accept it."
+                )
+        fingerprints[path] = digest
+    elif digest != fingerprints[path]:
+        refuse_data(f"{path} was changed by something other than the bot while it ran.")
+    return content.decode("utf-8")
+
+
+def sync_directory(directory: str) -> None:
+    """
+    Make the renames in a directory durable.
+    :param directory:
+    """
+    descriptor: int = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def write_files(contents: dict[str, str]) -> None:
+    """
+    Replace files durably: each new file reaches the disk before it replaces the old one,
+    and the replacements before this returns.
+    :param contents: The new contents of each file, by path.
+    """
+    for path, content in contents.items():
+        with open(f"{path}.tmp", "w", encoding="utf-8") as file:
+            file.write(content)
+            file.flush()
+            os.fsync(file.fileno())
+    for path in contents:
+        os.replace(f"{path}.tmp", path)
+    for directory in {os.path.dirname(path) for path in contents}:
+        sync_directory(directory)
+
+
+def write_store(path: str, content: str) -> None:
+    """
+    Save a file the bot keeps, and its fingerprint.
+    :param path:
+    :param content:
+    """
+    digest: str = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    write_files({path: content, f"{path}.sha256": digest})
+    fingerprints[path] = digest
+
+
+def dropped_keys(saved: dict, new: dict, where: str = "") -> list[str]:
+    """
+    The keys of a saved dictionary, at any depth, that a new one no longer has.
+    :param saved:
+    :param new:
+    :param where: The path to these dictionaries, for naming the keys.
+    :return:
+    """
+    dropped: list[str] = []
+    for key, value in saved.items():
+        if key not in new:
+            dropped.append(f"{where}{key}")
+        elif isinstance(value, dict) and isinstance(new[key], dict):
+            dropped.extend(dropped_keys(value, new[key], f"{where}{key}/"))
+    return dropped
+
+
+def setting_problems(value: typing.Any, default: typing.Any, name: str) -> list[str]:
+    """
+    How a setting differs from the shape of its default: no value set yet, the wrong type, or
+    missing or unknown keys.
+    :param value:
+    :param default:
+    :param name: The setting's name, for the problems.
+    :return:
+    """
+    if value is None:
+        return [f"{name} is not set."]
+    if type(value) is not type(default):
+        return [f"{name} must be {type(default).__name__}, not {type(value).__name__}."]
+    if not isinstance(default, dict):
+        return []
+    return (
+        [f"{name} is missing '{key}'." for key in default.keys() - value.keys()]
+        + [
+            f"{name} has an unknown key '{key}'."
+            for key in value.keys() - default.keys()
+        ]
+        + [
+            problem
+            for key in default.keys() & value.keys()
+            for problem in setting_problems(value[key], default[key], f"{name}.{key}")
+        ]
+    )
+
+
+def config_problems(config_data: typing.Any) -> list[str]:
+    """
+    What a config gets wrong in itself, against the shape of the default guild config. What
+    only Discord can tell, such as a guild the bot is not in, is not checked here.
+    :param config_data:
+    :return: One line per problem, none for a complete config.
+    """
+    if not isinstance(config_data, dict):
+        return ["The config must be an object of guild IDs."]
+    problems: list[str] = []
+    for g_id_str, g_cfg in config_data.items():
+        if not g_id_str.isdecimal():
+            problems.append(f"'{g_id_str}' is not a guild ID.")
+        problems.extend(setting_problems(g_cfg, GuildConfig().to_dict(), g_id_str))
+        if (
+            isinstance(g_cfg, dict)
+            and isinstance(g_cfg.get("required_roles"), list)
+            and not all(
+                isinstance(group, list)
+                and group
+                and all(type(role_id) is int for role_id in group)
+                for group in g_cfg["required_roles"]
+            )
+        ):
+            problems.append(
+                f"{g_id_str}.required_roles must be a list of non-empty lists of role IDs."
+            )
+    return problems
+
+
+def unset(setting: typing.Any) -> typing.Any:
+    """
+    A setting with everything in it left for whoever sets the bot up to fill in.
+    :param setting:
+    :return:
+    """
+    if isinstance(setting, dict):
+        return {key: unset(value) for key, value in setting.items()}
+    return None
+
+
 async def load_data() -> FullDataType:
     """
-    Load data from the JSON file asynchronously.
-    :return: The data dictionary, empty only if there is no data file yet.
+    Load data from the JSON file.
+    :return: The data dictionary.
     """
-    if not os.path.exists(DATA_FILE):
-        return {}
-    # A file that cannot be read raises rather than reading as empty: every member would
-    # then look new, and the next save would replace the file with what little is left.
-    with open(DATA_FILE, "r", encoding="utf-8") as file:
-        return {
-            int(key1): {
-                int(key2): MemberEntry.from_dict(value)
-                for key2, value in subdict.items()
-            }
-            for key1, subdict in json.load(file).items()
+    return {
+        int(key1): {
+            int(key2): MemberEntry.from_dict(value) for key2, value in subdict.items()
         }
+        for key1, subdict in json.loads(read_store(DATA_FILE)).items()
+    }
 
 
-async def save_data(data: FullDataType, output_file: str = DATA_FILE) -> None:
+async def save_data(data: FullDataType) -> None:
     """
-    Save data to the JSON file asynchronously.
+    Save data to the JSON file.
     :param data: The data dictionary to save.
-    :param output_file: Path to the output JSON file.
     """
-    json_data = json.dumps(
-        {
-            str(key1): {str(key2): value.to_dict() for key2, value in subdict.items()}
-            for key1, subdict in data.items()
-        },
-        indent=2,
-    )
-    # Written alongside the target and renamed over it, so an interrupted write leaves
-    # the previous file rather than a truncated one that would load as no data at all.
-    temp_file: str = f"{output_file}.tmp"
-    async with aiofiles.open(temp_file, "w", encoding="utf-8") as file:
-        await file.write(json_data)
-    os.replace(temp_file, output_file)
+    json_dict: dict = {
+        str(key1): {str(key2): value.to_dict() for key2, value in subdict.items()}
+        for key1, subdict in data.items()
+    }
+    # The bot never removes a guild, a member or an opinion, so a save that would can only be
+    # a bug.
+    dropped: list[str] = dropped_keys(json.loads(read_store(DATA_FILE)), json_dict)
+    if dropped:
+        refuse_data(f"Refused to save data that drops {', '.join(dropped)}.")
+    await asyncio.to_thread(write_store, DATA_FILE, json.dumps(json_dict, indent=2))
 
 
 def format_severity(severity: fractions.Fraction) -> str:
@@ -611,9 +776,6 @@ async def on_message(message: discord.Message, override: bool = False) -> None:
 
     async with data_lock:
         data: FullDataType = await load_data()
-        # Ensure the guild exists in the data
-        if message.guild.id not in data:
-            data[message.guild.id] = {}
         if author_id not in data[message.guild.id]:
             await _on_member_join_impl(author, data, message.guild)
 
@@ -795,7 +957,6 @@ class RequestBanModal(discord.ui.Modal):
             return
 
         reason = self.reason.value
-        # Open file ban_requests.json, create it if it doesn't exist
         ban_requests: BanRequestsType = read_ban_requests()
         if interaction.guild.id not in ban_requests:
             ban_requests[interaction.guild.id] = {}
@@ -811,7 +972,7 @@ class RequestBanModal(discord.ui.Modal):
             "request": self.ban_bool,
             "reason": reason,
         }
-        save_ban_requests(ban_requests)
+        await save_ban_requests(ban_requests)
         target_requests: dict[int, BanRequestType] = ban_requests[interaction.guild.id][
             target_object.id
         ]
@@ -935,7 +1096,7 @@ class BanRequestCancelSelect(discord.ui.Select):
         for requester_id in ban_requests[interaction.guild.id][target_id]:
             if requester_id == interaction.user.id:
                 ban_requests[interaction.guild.id][target_id].pop(requester_id)
-                save_ban_requests(ban_requests)
+                await save_ban_requests(ban_requests)
                 # noinspection PyUnresolvedReferences
                 # Find the user id in the self.requests list and get the display name
                 await interaction.response.send_message(
@@ -956,27 +1117,28 @@ def read_ban_requests() -> BanRequestsType:
     Read the ban requests from the JSON file.
     :return:
     """
-    if os.path.exists("../ban_requests.json"):
-        with open("../ban_requests.json") as file:
-            return {
-                int(guild_key): {
-                    int(target_key): {
-                        int(user_key): value for user_key, value in subdict.items()
-                    }
-                    for target_key, subdict in guild_dict.items()
-                }
-                for guild_key, guild_dict in json.load(file).items()
+    return {
+        int(guild_key): {
+            int(target_key): {
+                int(user_key): value for user_key, value in subdict.items()
             }
-    return {}
+            for target_key, subdict in guild_dict.items()
+        }
+        for guild_key, guild_dict in json.loads(read_store(BAN_REQUESTS_FILE)).items()
+    }
 
 
-def save_ban_requests(ban_requests: BanRequestsType) -> None:
+async def save_ban_requests(ban_requests: BanRequestsType) -> None:
     """
     Save the ban requests to the JSON file.
     :param ban_requests:
     """
-    with open("../ban_requests.json", "w") as file:
-        json.dump(
+    # Read first, so that a change made by something else is not overwritten unseen.
+    read_store(BAN_REQUESTS_FILE)
+    await asyncio.to_thread(
+        write_store,
+        BAN_REQUESTS_FILE,
+        json.dumps(
             {
                 str(guild_key): {
                     str(target_key): {
@@ -986,9 +1148,9 @@ def save_ban_requests(ban_requests: BanRequestsType) -> None:
                 }
                 for guild_key, guild_dict in ban_requests.items()
             },
-            file,
             indent=2,
-        )
+        ),
+    )
 
 
 async def dm_member(
@@ -1133,56 +1295,140 @@ async def process_messages_in_order(
 # -----------------------------------------------------------------------------
 
 
+def missing_file_remedy(path: str) -> str:
+    """
+    What to do about a file the bot keeps that is missing.
+    :param path:
+    :return:
+    """
+    if path == CONFIG_FILE:
+        return "Set the bot up with `python src/bot.py --init`."
+    if path.endswith(".sha256"):
+        return (
+            "Run `python src/bot.py --init` to accept the file it belongs to as it is."
+        )
+    return "Put it back (the data's nightly snapshots are in data_backup/, and an empty {} starts a file over), then run `python src/bot.py --init` to accept it."
+
+
+async def set_up() -> bool:
+    """
+    Write or complete the files the bot keeps, which it runs only with. It can be run any
+    number of times: the config stays a draft until every setting in it is set, and only then
+    are the data files created and the draft made the config, last, so that a setup cut short
+    simply runs again. Afterwards, it accepts a kept file changed by hand as it is.
+    :return: Whether the bot is set up.
+    """
+    setting_up_config: bool = not os.path.exists(CONFIG_FILE)
+    config_path: str = CONFIG_DRAFT_FILE if setting_up_config else CONFIG_FILE
+    if setting_up_config and not os.path.exists(CONFIG_DRAFT_FILE):
+        write_files(
+            {
+                CONFIG_DRAFT_FILE: json.dumps(
+                    {
+                        str(guild.id): unset(GuildConfig().to_dict())
+                        for guild in bot.guilds
+                    },
+                    indent=2,
+                )
+            }
+        )
+        logger.info(
+            f"Wrote {CONFIG_DRAFT_FILE} for {', '.join(f'{guild.name} ({guild.id})' for guild in bot.guilds)}. Set every setting in it, remove any guild the bot should not serve, and run --init again.",
+            guild_id=None,
+        )
+        return False
+    try:
+        with open(config_path) as config_file:
+            problems: list[str] = config_problems(json.load(config_file))
+    except json.JSONDecodeError as e:
+        problems = [f"Not valid JSON: {e}"]
+    for problem in problems:
+        logger.error(f"{config_path}: {problem}", guild_id=None)
+    if problems:
+        return False
+
+    for path in (DATA_FILE, BAN_REQUESTS_FILE):
+        if not os.path.exists(path):
+            if not setting_up_config:
+                # A data file of a bot that is set up was lost; whether to restore it or
+                # start it over is for a person to decide.
+                logger.error(
+                    f"{path} is missing. {missing_file_remedy(path)}", guild_id=None
+                )
+                return False
+            write_store(path, "{}")
+            logger.info(f"Created an empty {path}.", guild_id=None)
+            continue
+        with open(path, "rb") as file:
+            digest: str = hashlib.sha256(file.read()).hexdigest()
+        try:
+            with open(f"{path}.sha256") as file:
+                recorded: str | None = file.read()
+        except FileNotFoundError:
+            recorded = None
+        if recorded != digest:
+            write_files({f"{path}.sha256": digest})
+            logger.info(f"Accepted {path} as it is.", guild_id=None)
+
+    if setting_up_config:
+        os.replace(CONFIG_DRAFT_FILE, CONFIG_FILE)
+        sync_directory(os.path.dirname(CONFIG_FILE))
+    logger.info("Setup is complete. Run the bot without --init.", guild_id=None)
+    return True
+
+
 @bot.event
 async def on_ready() -> None:
     """
-    Event that runs when the bot is ready, syncing the commands and starting the day_change loop.
+    Event that runs when the bot is ready, syncing the commands and starting the day_change loop,
+    or setting the bot up when started with --init.
     """
-    global is_initialized, guild_objects, GUILDS, welcome_cutoff
+    global is_initialized, guild_objects, GUILDS, setup_complete
     if is_initialized:
         return
-
-    # Config file check and creation
-    if not os.path.exists(CONFIG_FILE):
-        config_data: dict = {
-            str(guild.id): GuildConfig().to_dict() for guild in bot.guilds
-        }
-        json.dump(config_data, open(CONFIG_FILE, "w"), indent=2)
-        logger.info(
-            "Config file not found. Created a default one with all current guilds.",
-            guild_id=None,
-        )
-    else:
+    if SETTING_UP:
         try:
-            with open(CONFIG_FILE) as config_file:
-                config_data: dict = json.load(config_file)
-        except json.JSONDecodeError as e:
-            logger.error(
-                f"Failed to parse config file {CONFIG_FILE}: {str(e)}", guild_id=None
-            )
+            setup_complete = await set_up()
+        finally:
             await shutdown()
-            return
+        return
 
-    # Get default configs for validation
-    default_guild_config: dict = GuildConfig().to_dict()
-    expected_guild_keys: set[str] = set(default_guild_config.keys())
-    default_logger_config: dict = LoggerConfig().to_dict()
-    expected_logger_keys: set[str] = set(default_logger_config.keys())
+    # Every file the bot keeps is made once, by --init. One that is missing was removed, and
+    # the bot does not start over in its place. Read before any handler acts, so that the bot
+    # never runs without them.
+    path: str = CONFIG_FILE
+    try:
+        with open(CONFIG_FILE) as config_file:
+            config_data: dict = json.load(config_file)
+        path = DATA_FILE
+        dta: FullDataType = await load_data()
+        path = BAN_REQUESTS_FILE
+        read_ban_requests()
+    except FileNotFoundError as e:
+        logger.error(
+            f"{e.filename} is missing. {missing_file_remedy(e.filename)}", guild_id=None
+        )
+        await shutdown()
+        return
+    except DataIntegrityError as e:
+        logger.error(str(e), guild_id=None)
+        await shutdown()
+        return
+    except Exception as e:
+        logger.error(f"Failed to read {path}: {e!r}", guild_id=None)
+        await shutdown()
+        return
+
+    problems: list[str] = config_problems(config_data)
+    if problems:
+        for problem in problems:
+            logger.error(f"{CONFIG_FILE}: {problem}", guild_id=None)
+        await shutdown()
+        return
 
     guilds: GuildsType = {}
-
     for g_id_str, g_cfg in config_data.items():
-        # Validate guild ID format
-        try:
-            g_id: int = int(g_id_str)
-        except ValueError:
-            logger.error(
-                f"Invalid guild ID '{g_id_str}' - must be integer. Skipping entry.",
-                guild_id=None,
-            )
-            continue
-
-        # Get guild info for logging
+        g_id: int = int(g_id_str)
         guild: discord.Guild | None = bot.get_guild(g_id)
         if guild is None:
             logger.error(
@@ -1190,131 +1436,54 @@ async def on_ready() -> None:
                 guild_id=None,
             )
             continue
-        guild_label: str = f"{guild.name}"
-
-        # Validate top-level keys
-        present_guild_keys: set[str] = set(g_cfg.keys())
-
-        # Check for missing keys
-        for missing_key in expected_guild_keys - present_guild_keys:
-            logger.warning(
-                f"{guild_label}: Missing config key '{missing_key}' - using default value.",
-                guild_id=g_id,
-            )
-
-        # Check for unknown top-level keys
-        for unknown_key in present_guild_keys - expected_guild_keys:
-            logger.warning(
-                f"{guild_label}: Unknown config key '{unknown_key}'", guild_id=g_id
-            )
-
-        # Validate logger config
-        logger_cfg: dict = g_cfg.get("logger", {})
-        present_logger_keys: set[str] = set(logger_cfg.keys())
-
-        # Check for missing logger keys
-        for missing_key in expected_logger_keys - present_logger_keys:
-            logger.warning(
-                f"{guild_label} Logger: Missing config key '{missing_key}' - using default value.",
-                guild_id=g_id,
-            )
-
-        # Check for unknown logger keys
-        for unknown_key in present_logger_keys - expected_logger_keys:
-            logger.warning(
-                f"{guild_label} Logger: Unknown key '{unknown_key}'", guild_id=g_id
-            )
-
-        # Validate required_roles structure
-        required_roles: list = g_cfg.get("required_roles", [])
-        if not isinstance(required_roles, list):
-            logger.error(
-                f"{guild_label}: Invalid required_roles format, must be list of role lists. Assuming no requirements.",
-                guild_id=g_id,
-            )
-            required_roles = []
-
-        # Validate individual role groups
+        # A role deleted on Discord takes its group out of the requirements; the rest of the
+        # config holds.
         valid_roles: list[list[int]] = []
-        for role_group in required_roles:
-            if not isinstance(role_group, list):
+        for role_group in g_cfg["required_roles"]:
+            missing_role_ids: list[int] = [
+                role_id for role_id in role_group if not guild.get_role(role_id)
+            ]
+            if missing_role_ids:
                 logger.error(
-                    f'{guild_label}: Invalid required_roles group format "{role_group}", must be list of role IDs. Skipping group.',
+                    f"{guild.name}: Role ID {missing_role_ids[0]} not found in guild. Skipping group.",
                     guild_id=g_id,
                 )
-                continue
-            valid_group: list[int] = []
-            for role_id in role_group:
-                if not isinstance(role_id, int):
-                    logger.error(
-                        f"{guild_label}: Non-integer role ID {role_id} found. Skipping group.",
-                        guild_id=g_id,
-                    )
-                    valid_group = []
-                    break
-                if not guild.get_role(role_id):
-                    logger.error(
-                        f"{guild_label}: Role ID {role_id} not found in guild. Skipping group.",
-                        guild_id=g_id,
-                    )
-                    valid_group = []
-                    break
-                valid_group.append(role_id)
-            if valid_group:
-                valid_roles.append(valid_group)
-
-        # Create validated config
-        try:
-            guilds[g_id] = GuildConfig.from_dict(
-                {
-                    **default_guild_config,  # Start with defaults
-                    **g_cfg,  # Override with config values
-                    "required_roles": valid_roles,
-                }
-            )
-        except Exception as e:
-            logger.error(
-                f"{guild_label}: Failed to create config - {str(e)}.", guild_id=g_id
-            )
-
-    # Final guild verification
-    for g_id in list(guilds.keys()):
-        guild: discord.Guild | None = bot.get_guild(g_id)
-        if not guild:
-            logger.error(
-                f"Configured guild id={g_id} not found - bot not in server. Removing from config.",
-                guild_id=None,
-            )
-            del guilds[g_id]
+            else:
+                valid_roles.append(role_group)
+        guilds[g_id] = GuildConfig.from_dict({**g_cfg, "required_roles": valid_roles})
 
     if not guilds:
         logger.error("No valid guild configurations found.", guild_id=None)
         await shutdown()
         return
 
-    # Read before any handler acts on these guilds: a data file that cannot be read stops
-    # the bot rather than leaving it running without its data, and the welcome cutoff is in
-    # place before anyone can be welcomed.
-    try:
-        dta: FullDataType = await load_data()
-    except Exception as e:
-        logger.error(f"Failed to load data file {DATA_FILE}: {str(e)}", guild_id=None)
-        await shutdown()
-        return
+    # A guild served for the first time gets its data before any handler can act there, with
+    # everyone already in it recorded and given their respect role, but not welcomed.
+    new_guilds: list[discord.Guild] = [
+        bot.get_guild(g_id) for g_id in guilds if g_id not in dta
+    ]
+    for gld in new_guilds:
+        dta[gld.id] = {member.id: MemberEntry() for member in gld.members}
+    if new_guilds:
+        await save_data(dta)
+    for gld in new_guilds:
+        for member in gld.members:
+            await set_respect_role(gld, member, fractions.Fraction(0))
+        logger.info(
+            f"Started serving {gld.name}: recorded its {len(gld.members)} members without welcoming them.",
+            guild_id=gld.id,
+        )
+
     after_time = datetime.datetime.fromtimestamp(
         max(
             [discord.utils.DISCORD_EPOCH / 1000]
             + [
                 member_entry.latest_message_time
                 for g_id in guilds
-                for member_entry in dta.get(g_id, {}).values()
+                for member_entry in dta[g_id].values()
             ]
         )
     )
-    # With no recorded activity, the bot has never watched these servers, and only
-    # members who join from now on are new.
-    if after_time.timestamp() > discord.utils.DISCORD_EPOCH / 1000:
-        welcome_cutoff = after_time.astimezone(datetime.timezone.utc)
 
     # Atomically set GUILDS after all validation succeeds
     # Mutate existing GUILDS so a missing name raises instead of silently creating a local.
@@ -1582,16 +1751,8 @@ async def on_ready() -> None:
         logger.info("Catching up on missed messages...", guild_id=None)
 
         dta = await load_data()
-        # Add missing guilds to the data file
-        was_modified: bool = False
-        for g in guild_objects:
-            if g.id not in dta:
-                dta[g.id] = {}
-                was_modified = True
-        if was_modified:
-            await save_data(dta)
         # Members who joined while the bot was down are welcomed now rather than at the
-        # day change: a restart before then would move the cutoff past them.
+        # day change.
         for g in guild_objects:
             for member in g.members:
                 if member.id not in dta[g.id]:
@@ -1659,8 +1820,6 @@ async def on_member_join(member: discord.Member) -> None:
         return
     async with data_lock:
         data: FullDataType = await load_data()
-        if member.guild.id not in data:
-            data[member.guild.id] = {}
         await _on_member_join_impl(member, data, member.guild)
 
 
@@ -1688,15 +1847,14 @@ async def _on_member_join_impl(
             )
         return
     if message_sent:
-        if (
-            welcome_dm
-            and member.joined_at is not None
-            and member.joined_at > welcome_cutoff
-        ):
+        if welcome_dm:
             # DM the member
             sending_message: str = ""
             # If the member joined over 5 minutes ago
-            if (discord.utils.utcnow() - member.joined_at).total_seconds() > 300:
+            if (
+                member.joined_at is not None
+                and (discord.utils.utcnow() - member.joined_at).total_seconds() > 300
+            ):
                 sending_message += "With apologies for the delay,\n"
             sending_message += welcome_dm
             if member.id != bot.user.id:
@@ -2148,12 +2306,8 @@ async def day_change() -> None:
             backup_file_path
             + f"/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
         )
-        if os.path.exists(DATA_FILE):
-            shutil.copyfile(DATA_FILE, backup_file)  # Backup data
-        else:
-            # Record the empty state so the series has no gap.
-            logger.error(f"Data file {DATA_FILE} is missing.", guild_id=None)
-            await save_data({}, backup_file)
+        # Only data checked to be the bot's own is kept.
+        write_files({backup_file: read_store(DATA_FILE)})
 
     failed_guilds: list[int] = []
     for guild in guild_objects:
@@ -2275,3 +2429,5 @@ signal.signal(signal.SIGTERM, signal_handler)
 
 # Run the bot
 bot.run(TOKEN, log_handler=console_handler, log_formatter=formatter)
+if SETTING_UP and not setup_complete:
+    sys.exit(1)
