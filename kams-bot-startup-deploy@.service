@@ -1,13 +1,13 @@
 [Unit]
 Description=Trigger the KaMS Club Bot deploy at boot
-After=network-online.target
-Wants=network-online.target
+Requires=kams-bot-internet.service
+After=kams-bot-internet.service
 
 [Service]
 Type=oneshot
 User=%i
 # The token reaches curl on stdin: a command line is recorded in the journal.
-ExecStart=/bin/bash -c 'while ! curl -s --connect-timeout 5 https://api.github.com >/dev/null; do echo "Waiting for GitHub API to be reachable..."; sleep 5; done; printf "Authorization: token %%s\\n" "$(cat /home/%i/.config/KaMS-Club-Bot/github_token)" | curl -X POST -H @- -H "Accept: application/vnd.github+json" -d \'{"ref":"main"}\' https://api.github.com/repos/Username2481632/KaMS-Club-Bot/actions/workflows/main.yml/dispatches'
+ExecStart=/bin/bash -c 'printf "Authorization: token %%s\\n" "$(cat /home/%i/.config/KaMS-Club-Bot/github_token)" | curl -X POST -H @- -H "Accept: application/vnd.github+json" -d \'{"ref":"main"}\' https://api.github.com/repos/Username2481632/KaMS-Club-Bot/actions/workflows/main.yml/dispatches'
 Restart=on-failure
 RestartSec=30
 

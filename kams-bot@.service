@@ -1,7 +1,8 @@
 [Unit]
 Description=KaMS Club Bot
-After=network-online.target
-Wants=network-online.target
+# Waiting for the internet before each start keeps a slow network from costing a restart.
+Requires=kams-bot-internet.service
+After=kams-bot-internet.service network.target
 # Restarts are for the occasional unforeseen failure. A bot that needs more than three
 # starts within an hour is broken in a way more retries would only make worse, so it is left
 # stopped, which the down alert reports.
@@ -11,10 +12,6 @@ StartLimitBurst=3
 [Service]
 User=%i
 WorkingDirectory=/home/%i/KaMS-Club-Bot
-# The bot starts only once Discord answers, so the network still coming up — after a power
-# cut the router can come back later than the Pi — costs no restart.
-ExecStartPre=/bin/bash -c 'while ! curl -s --connect-timeout 5 https://discord.com/api/v10/gateway >/dev/null; do echo "Waiting for Discord to be reachable..."; sleep 5; done'
-TimeoutStartSec=infinity
 ExecStart=/home/%i/KaMS-Club-Bot/venv/bin/python3.12 /home/%i/KaMS-Club-Bot/src/bot.py
 Restart=on-failure
 RestartSec=60

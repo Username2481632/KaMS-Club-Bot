@@ -1,0 +1,15 @@
+[Unit]
+Description=Wait until the internet answers
+# network-online.target only means NetworkManager has brought the Pi's connection up; after a
+# power cut the router can still be getting back online. The units that need the internet
+# require this one, and as it does not stay active, it waits again whenever one of them starts.
+
+[Service]
+Type=oneshot
+# Discord, which the bot cannot run without, stands for the internet.
+ExecStart=/bin/bash -c 'while ! curl -s -m 10 https://discord.com/api/v10/gateway >/dev/null; do echo "Waiting for the internet..."; sleep 5; done'
+TimeoutStartSec=infinity
+# It runs each time a dependent starts, so its own start and finish stay out of the journal;
+# its waiting does not.
+SyslogLevel=notice
+LogLevelMax=notice

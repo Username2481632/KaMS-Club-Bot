@@ -68,7 +68,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
-          source: "kams-bot@.service,kams-bot-startup-deploy@.service,kams-bot-heartbeat@.service,kams-bot-heartbeat@.timer"
+          source: "kams-bot@.service,kams-bot-internet.service,kams-bot-startup-deploy@.service,kams-bot-heartbeat@.service,kams-bot-heartbeat@.timer"
           target: "~/KaMS-Club-Bot/"
           overwrite: true
 
@@ -81,6 +81,23 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
           script: |
+            # The bot's units go in first: ip-updater's requires kams-bot-internet.service.
+            BOT_UNITS_CHANGED=false
+            for unit in kams-bot@.service kams-bot-internet.service kams-bot-startup-deploy@.service kams-bot-heartbeat@.service kams-bot-heartbeat@.timer; do
+              if ! diff -q ~/KaMS-Club-Bot/$unit /etc/systemd/system/$unit >/dev/null 2>&1; then
+                echo "$unit has changed, updating..."
+                sudo cp ~/KaMS-Club-Bot/$unit /etc/systemd/system/
+                BOT_UNITS_CHANGED=true
+              fi
+              rm -f ~/KaMS-Club-Bot/$unit
+            done
+            if [ "$BOT_UNITS_CHANGED" = true ]; then
+              sudo systemctl daemon-reload
+              echo "Bot services updated and reloaded"
+            else
+              echo "No changes to the bot service files"
+            fi
+
             # Check if service files have changed and update them
             if [ -f ~/KaMS-Club-Bot/ip-updater/ip-updater@.service ]; then
               echo "Checking for systemd service updates..."
@@ -116,22 +133,6 @@ jobs:
               # Clean up - remove service files from Pi (they're now in /etc/systemd/system/)
               rm -f ~/KaMS-Club-Bot/ip-updater/ip-updater@.service
               rm -f ~/KaMS-Club-Bot/ip-updater/ip-updater@.timer
-            fi
-
-            BOT_UNITS_CHANGED=false
-            for unit in kams-bot@.service kams-bot-startup-deploy@.service kams-bot-heartbeat@.service kams-bot-heartbeat@.timer; do
-              if ! diff -q ~/KaMS-Club-Bot/$unit /etc/systemd/system/$unit >/dev/null 2>&1; then
-                echo "$unit has changed, updating..."
-                sudo cp ~/KaMS-Club-Bot/$unit /etc/systemd/system/
-                BOT_UNITS_CHANGED=true
-              fi
-              rm -f ~/KaMS-Club-Bot/$unit
-            done
-            if [ "$BOT_UNITS_CHANGED" = true ]; then
-              sudo systemctl daemon-reload
-              echo "Bot services updated and reloaded"
-            else
-              echo "No changes to the bot service files"
             fi
 
       - name: Check if upgrade script is non-empty

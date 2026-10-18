@@ -1,7 +1,7 @@
 [Unit]
 Description=IP Address Updater for GitHub Actions
-After=network-online.target
-Wants=network-online.target
+Requires=kams-bot-internet.service
+After=kams-bot-internet.service
 
 [Service]
 Type=oneshot
