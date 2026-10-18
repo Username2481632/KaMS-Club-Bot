@@ -586,6 +586,13 @@ async def on_message(message: discord.Message, override: bool = False) -> None:
         or message.guild.id not in GUILDS
     ):
         return
+    # Excluded channels earn no credibility live either, as the catch-up never reads them.
+    if isinstance(message.channel, discord.Thread):
+        channel_ids: set[int | None] = {message.channel.id, message.channel.parent_id}
+    else:
+        channel_ids = {message.channel.id, message.channel.category_id}
+    if channel_ids & set(CREDIBILITY_EARNING_EXCLUSION_CHANNELS):
+        return
     # update the user's [latest_message_time] and [conversation_start_time] in the data file
     author: discord.Member | discord.User = message.author
     if message.author == bot.user and message.raw_mentions:
@@ -1582,6 +1589,7 @@ async def on_ready() -> None:
             if (
                 thread.id not in processed_channels
                 and thread.id not in CREDIBILITY_EARNING_EXCLUSION_CHANNELS
+                and thread.parent_id not in CREDIBILITY_EARNING_EXCLUSION_CHANNELS
             ):
                 generators.append(message_generator(thread, after_time))
                 processed_channels.add(thread.id)
