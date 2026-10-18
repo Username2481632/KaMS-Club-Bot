@@ -1999,21 +1999,35 @@ async def _day_change_for_guild(guild: discord.Guild) -> None:
             assert bot_role is not None, (
                 f"No role is managed by the bot in guild '{guild.name}'."
             )
+            overwrites: dict[discord.Role, discord.PermissionOverwrite] = {
+                guild.default_role: discord.PermissionOverwrite(
+                    send_messages=False,
+                    create_public_threads=False,
+                    create_private_threads=False,
+                ),
+                # The bot's access must not depend on what @everyone is allowed.
+                bot_role: discord.PermissionOverwrite(
+                    read_messages=True,
+                    read_message_history=True,
+                    send_messages=True,
+                    manage_messages=True,
+                ),
+            }
+            # Discord refuses a new channel whose overwrites set a permission the bot lacks in
+            # the guild. The bot cannot grant itself such a permission, and @everyone, whose
+            # permissions the bot shares, lacks it too, so leaving it out changes nothing.
+            bot_permissions: discord.Permissions = guild.me.guild_permissions
             justice_channel = await justice_channel_category.create_text_channel(
                 JUSTICE_CHANNEL_NAME,
                 overwrites={
-                    guild.default_role: discord.PermissionOverwrite(
-                        send_messages=False,
-                        create_public_threads=False,
-                        create_private_threads=False,
-                    ),
-                    # The bot's access must not depend on what @everyone is allowed.
-                    bot_role: discord.PermissionOverwrite(
-                        read_messages=True,
-                        read_message_history=True,
-                        send_messages=True,
-                        manage_messages=True,
-                    ),
+                    target: discord.PermissionOverwrite(
+                        **{
+                            name: value
+                            for name, value in overwrite
+                            if value is not None and getattr(bot_permissions, name)
+                        }
+                    )
+                    for target, overwrite in overwrites.items()
                 },
             )
         else:
