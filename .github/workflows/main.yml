@@ -60,6 +60,19 @@ jobs:
           rm: true
           strip_components: 1
 
+      - name: Deploy monitor directory to Raspberry Pi
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.PI_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
+          source: "monitor/"
+          target: "~/KaMS-Club-Bot/monitor/"
+          rm: true
+          strip_components: 1
+
       - name: Deploy bot service files to Raspberry Pi
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -68,7 +81,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
-          source: "kams-bot@.service,kams-bot-internet.service,kams-bot-startup-deploy@.service,kams-bot-heartbeat@.service,kams-bot-heartbeat@.timer"
+          source: "kams-bot@.service,kams-bot-internet.service,kams-bot-startup-deploy@.service,kams-bot-heartbeat@.service,kams-bot-heartbeat@.timer,kams-bot-notify@.service,kams-bot-notify@.timer"
           target: "~/KaMS-Club-Bot/"
           overwrite: true
 
@@ -83,7 +96,7 @@ jobs:
           script: |
             # The bot's units go in first: ip-updater's requires kams-bot-internet.service.
             BOT_UNITS_CHANGED=false
-            for unit in kams-bot@.service kams-bot-internet.service kams-bot-startup-deploy@.service kams-bot-heartbeat@.service kams-bot-heartbeat@.timer; do
+            for unit in kams-bot@.service kams-bot-internet.service kams-bot-startup-deploy@.service kams-bot-heartbeat@.service kams-bot-heartbeat@.timer kams-bot-notify@.service kams-bot-notify@.timer; do
               if ! diff -q ~/KaMS-Club-Bot/$unit /etc/systemd/system/$unit >/dev/null 2>&1; then
                 echo "$unit has changed, updating..."
                 sudo cp ~/KaMS-Club-Bot/$unit /etc/systemd/system/
@@ -197,7 +210,7 @@ jobs:
             # The address the bot checks in at, for the down alert.
             (umask 077 && mkdir -p ~/.config/KaMS-Club-Bot && echo "${{ secrets.HEALTHCHECK_URL }}" > ~/.config/KaMS-Club-Bot/healthcheck_url)
             sudo systemctl enable kams-bot@$(whoami).service kams-bot-startup-deploy@$(whoami).service
-            sudo systemctl enable --now kams-bot-heartbeat@$(whoami).timer
+            sudo systemctl enable --now kams-bot-heartbeat@$(whoami).timer kams-bot-notify@$(whoami).timer
             # A deploy starts the bot even after its restart limit was hit.
             sudo systemctl reset-failed kams-bot@$(whoami).service
             sudo systemctl restart kams-bot@$(whoami).service

@@ -1,0 +1,13 @@
+[Unit]
+Description=Pass the KaMS Club Bot's warnings and errors on to its owner
+Requires=kams-bot-internet.service
+After=kams-bot-internet.service
+
+[Service]
+Type=oneshot
+User=%i
+ExecStart=/home/%i/KaMS-Club-Bot/venv/bin/python3.12 /home/%i/KaMS-Club-Bot/monitor/notify.py
+# A run every few minutes would fill the journal with its start and finish; a failed run
+# still shows.
+SyslogLevel=warning
+LogLevelMax=notice
