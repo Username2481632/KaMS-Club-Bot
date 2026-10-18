@@ -1,0 +1,9 @@
+[Unit]
+Description=Tell the down alert that the KaMS Club Bot is running
+
+[Service]
+Type=oneshot
+User=%i
+# Only a running bot checks in, so the alert fires when the bot stops as well as when the
+# Pi or its network does.
+ExecStart=/bin/bash -c 'if systemctl is-active --quiet kams-bot@%i.service; then curl -fsS -m 10 --retry 5 -o /dev/null "$(cat /home/%i/.config/KaMS-Club-Bot/healthcheck_url)"; fi'
