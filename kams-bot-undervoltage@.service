@@ -1,0 +1,14 @@
+[Unit]
+Description=Log the Pi's under-voltage warnings to the KaMS Club Bot's log
+
+[Service]
+Type=oneshot
+User=%i
+# Holds the journal cursor until the next boot, whose warnings are read from its start.
+RuntimeDirectory=kams-bot-undervoltage
+RuntimeDirectoryPreserve=yes
+ExecStart=/home/%i/KaMS-Club-Bot/venv/bin/python3.12 /home/%i/KaMS-Club-Bot/monitor/undervoltage.py
+# A run every minute would fill the journal with its start and finish; a failed run still
+# shows.
+SyslogLevel=warning
+LogLevelMax=notice

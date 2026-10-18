@@ -7,7 +7,8 @@ one stopped, so a burst of records arrives as one message, and a run that cannot
 leaves the records for the next. Errors are passed on from every logger, and warnings from the
 bot's own and the Pi's: discord.py's warnings are about its own reconnects. A record that only
 repeats one already reported that day, numbers aside, is left out, so a problem that persists is
-reported once a day rather than every few minutes.
+reported once a day rather than every few minutes; the Pi's own records, a power cut or a drop in
+its supply voltage, are each an event of their own and always reported.
 """
 
 import datetime
@@ -217,7 +218,7 @@ def main() -> None:
             if exception:
                 entry += f" — `{exception.strip()}`"
             key = re.sub(r"\d+", "#", entry)
-            if key in state["reported"]:
+            if record["logger"] != "miphael" and key in state["reported"]:
                 continue
             if key not in entries:
                 entries[key] = [
