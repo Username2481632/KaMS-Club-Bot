@@ -25,12 +25,10 @@ import os
 import shutil
 import signal
 import socket
-import sys
 import time
-import traceback
 import typing
-from types import FrameType, TracebackType
-from typing import AsyncGenerator, Callable, Type
+from types import FrameType
+from typing import AsyncGenerator, Callable
 
 import aiofiles
 import aiohttp
@@ -2252,37 +2250,6 @@ def signal_handler(sig: int, frame: FrameType | None) -> None:
 # Register the signal handler for SIGTERM
 signal.signal(signal.SIGTERM, signal_handler)
 
-
-def handle_exception(
-    exc_type: Type[BaseException],
-    exc_value: BaseException,
-    exc_traceback: TracebackType | None,
-) -> None:
-    """
-    Global exception handler that restarts the script on an unhandled exception.
-
-    :param exc_type:
-    :param exc_value:
-    :param exc_traceback:
-    """
-    # Print the error and stack trace
-    logger.error("Unhandled exception occurred:", guild_id=None)
-    traceback.print_exception(exc_type, exc_value, exc_traceback)
-
-    # If the script has been running for less than 1 hour, exit
-    if time.time() - start_time < 1000:
-        exit(1)
-
-    # Optional: delay before restarting
-    time.sleep(60)
-
-    # Restart the script
-    logger.info("Restarting script...", guild_id=None)
-    os.execv(sys.executable, [sys.executable] + sys.argv)
-
-
-# Register the global exception handler
-sys.excepthook = handle_exception
 
 # Run the bot
 bot.run(TOKEN, log_handler=console_handler, log_formatter=formatter)
