@@ -1665,7 +1665,6 @@ async def _on_member_join_impl(
     if message_sent:
         if (
             welcome_dm
-            and not member.bot
             and member.joined_at is not None
             and member.joined_at > welcome_cutoff
         ):
@@ -1675,7 +1674,8 @@ async def _on_member_join_impl(
             if (discord.utils.utcnow() - member.joined_at).total_seconds() > 300:
                 sending_message += "With apologies for the delay,\n"
             sending_message += welcome_dm
-            await dm_member(member, sending_message, guild.id)
+            if member.id != bot.user.id:
+                await dm_member(member, sending_message, guild.id)
         else:
             message_sent = False
     else:
@@ -1696,7 +1696,9 @@ async def _on_member_join_impl(
     else:
         welcome_status = "recognized as a new server member"
         if welcome_dm:
-            welcome_status += f" (no message was sent because {'they are a bot' if member.bot else "they aren't new to the server"})"
+            welcome_status += (
+                " (no message was sent because this isn't their first time)"
+            )
 
     logger.info(
         f"{member.display_name} has been {welcome_status} and their roles have been set.",
