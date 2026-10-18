@@ -11,7 +11,9 @@ StartLimitBurst=10
 User=%i
 WorkingDirectory=/home/%i/KaMS-Club-Bot
 ExecStart=/home/%i/KaMS-Club-Bot/venv/bin/python3.12 /home/%i/KaMS-Club-Bot/src/bot.py
-Restart=on-failure
+# An exception escaping the bot reaches its own excepthook, which restarts it in place
+# or exits on purpose; systemd restarts only what that cannot see, a death by signal.
+Restart=on-abnormal
 RestartSec=30
 StandardOutput=append:/home/%i/KaMS-Club-Bot/bot.log
 StandardError=inherit
