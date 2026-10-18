@@ -17,6 +17,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Kill existing bot.py process
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.PI_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            pkill -f "[b]ot.py" || [ $? -eq 1 ]
+            while pgrep -f "[b]ot.py" > /dev/null; do sleep 1; done
+
       - name: Deploy src directory to Raspberry Pi
         uses: appleboy/scp-action@v0.1.7
         with:
