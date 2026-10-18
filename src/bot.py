@@ -800,18 +800,12 @@ class RequestBanModal(discord.ui.Modal):
             "reason": reason,
         }
         save_ban_requests(ban_requests)
-        # Only read, which the atomic save makes safe without the lock; waiting for it could
-        # outlast the 3 s Discord allows for the reply.
-        data: FullDataType = await load_data()
-        justice_ids: list[int] = [
-            justice.id
-            for justice in get_justices(data[interaction.guild.id], interaction.guild)
-        ]
         target_requests: dict[int, BanRequestType] = ban_requests[interaction.guild.id][
             target_object.id
         ]
         if self.ban_bool:
             # If all current justices have requested a ban, ban the user
+            justice_ids: list[int] = await get_justice_ids(interaction.guild)
             if len(justice_ids) == JUSTICE_COUNT and all(
                 justice_id in target_requests and target_requests[justice_id]["request"]
                 for justice_id in justice_ids
@@ -829,20 +823,16 @@ class RequestBanModal(discord.ui.Modal):
                     return
         else:
             # If 2/3 of current justices have requested an unban, unban the user
+            justice_ids: list[int] = await get_justice_ids(interaction.guild)
             try:
-                if (
-                    justice_ids
-                    and sum(
-                        1
-                        for justice_id in justice_ids
-                        if justice_id in target_requests
-                        and not target_requests[justice_id]["request"]
-                    )
-                    >= 2 * len(justice_ids) / 3
-                    and any(
-                        ban.user.id == target_object.id
-                        for ban in [ban async for ban in interaction.guild.bans()]
-                    )
+                if sum(
+                    1
+                    for justice_id in justice_ids
+                    if justice_id in target_requests
+                    and not target_requests[justice_id]["request"]
+                ) >= 2 * len(justice_ids) / 3 and any(
+                    ban.user.id == target_object.id
+                    for ban in [ban async for ban in interaction.guild.bans()]
                 ):
                     # Unban the user
                     await interaction.guild.unban(
@@ -1603,6 +1593,29 @@ async def on_ready() -> None:
     logger.info("Initialization complete.", guild_id=None)
 
 
+async def get_justice_ids(guild: discord.Guild) -> list[int]:
+    """
+    Get the justice ids from the justices channel.
+
+    :return:
+    """
+    # Fetch justice ids from the justices channel
+    justice_channel_category: discord.CategoryChannel | None = discord.utils.get(
+        guild.categories, name=JUSTICE_CHANNEL_CATEGORY
+    )
+    if justice_channel_category is not None:
+        justice_channel: discord.TextChannel | None = discord.utils.get(
+            justice_channel_category.text_channels, name=JUSTICE_CHANNEL_NAME
+        )
+        if justice_channel is not None:
+            async for message in justice_channel.history(limit=1):
+                if message.author == bot.user:
+                    # Read the mentions from the text: message.mentions holds only the users
+                    # the message pinged, and the list pings only new justices.
+                    return message.raw_mentions
+    return []
+
+
 @bot.event
 async def on_member_join(member: discord.Member) -> None:
     """
@@ -1656,9 +1669,7 @@ async def _on_member_join_impl(
         else:
             message_sent = False
     else:
-        await set_justice_role(
-            member, [justice.id for justice in get_justices(data[guild.id], guild)]
-        )
+        await set_justice_role(member, await get_justice_ids(guild))
 
     await set_respect_role(
         guild,
@@ -1717,31 +1728,6 @@ def justice_score(
     :return:
     """
     return server_data[member.id].deep_score, member.joined_at
-
-
-def get_justices(
-    server_data: ServerDataType, guild: discord.Guild
-) -> list[discord.Member]:
-    """
-    Determine the justices from the data. The #justices message only displays them.
-    :param server_data:
-    :param guild:
-    :return: The justices, highest justice score first.
-    """
-    justices: list[discord.Member] = []
-    if len(server_data.keys()) >= JUSTICE_COUNT * 5:
-        justices = sorted(
-            [
-                member
-                for member in guild.members
-                if not member.bot and member.id in server_data
-            ],
-            key=lambda memb: justice_score(server_data, memb),
-            reverse=True,
-        )[:JUSTICE_COUNT]
-        if server_data[justices[-1].id].deep_score <= JUSTICE_DEEP_SCORE_REQUIREMENT:
-            justices = []
-    return justices
 
 
 def is_timeout_prolongation_log(
@@ -1895,7 +1881,19 @@ async def _day_change_for_guild(guild: discord.Guild) -> None:
                 - CREDIBILITY_DECAY * CREDIBILITY_RATIO,
             )
 
-        justices: list[discord.Member] = get_justices(data[guild.id], guild)
+        # Calculate justices
+        justices: list[discord.Member] = []
+        if len(data[guild.id].keys()) >= JUSTICE_COUNT * 5:
+            justices = sorted(
+                members,
+                key=lambda memb: justice_score(data[guild.id], memb),
+                reverse=True,
+            )[:JUSTICE_COUNT]
+            if (
+                data[guild.id][justices[-1].id].deep_score
+                <= JUSTICE_DEEP_SCORE_REQUIREMENT
+            ):
+                justices = []
 
         log_deletions: list[int] = []
         for member_id in data[guild.id]:
@@ -1992,9 +1990,7 @@ async def _day_change_for_guild(guild: discord.Guild) -> None:
         else:
             async for message in justice_channel.history():
                 if message.author == bot.user:
-                    previous_justice_ids = {
-                        int(mention.id) for mention in message.mentions
-                    }
+                    previous_justice_ids = set(message.raw_mentions)
                 if not found and message.content != message_content:
                     await message.delete()
                 else:
