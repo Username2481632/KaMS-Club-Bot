@@ -2,9 +2,9 @@
 Description=KaMS Club Bot
 After=network-online.target
 Wants=network-online.target
-# Restarts are for the occasional unforeseen failure. A bot that fails three times within
-# an hour is broken in a way more retries would only make worse, so it is left stopped,
-# which the down alert reports.
+# Restarts are for the occasional unforeseen failure. A bot that needs more than three
+# starts within an hour is broken in a way more retries would only make worse, so it is left
+# stopped, which the down alert reports.
 StartLimitIntervalSec=1h
 StartLimitBurst=3
 

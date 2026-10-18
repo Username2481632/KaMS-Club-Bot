@@ -10,6 +10,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  # The Pi's ECDSA host key. Every step checks it, so a deploy goes to the Pi or nowhere,
+  # whatever the HOST secret says.
+  PI_HOST_KEY_FINGERPRINT: "SHA256:K5hfc7464ZP3NCVh8bf32ekoZUaGNZczezhzp/sZqNU"
+
 jobs:
   deploy:
     runs-on: ubuntu-latest  # GitHub Actions default runner
@@ -24,6 +29,7 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
           script: |
             pkill -f "[b]ot.py" || [ $? -eq 1 ]
             while pgrep -f "[b]ot.py" > /dev/null; do sleep 1; done
@@ -35,6 +41,7 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
           source: "src/"
           target: "~/KaMS-Club-Bot/src/"
           rm: true
@@ -47,6 +54,7 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
           source: "ip-updater/"
           target: "~/KaMS-Club-Bot/ip-updater/"
           rm: true
@@ -59,6 +67,7 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
           source: "kams-bot@.service,kams-bot-startup-deploy@.service,kams-bot-heartbeat@.service,kams-bot-heartbeat@.timer"
           target: "~/KaMS-Club-Bot/"
           overwrite: true
@@ -70,6 +79,7 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
           script: |
             # Check if service files have changed and update them
             if [ -f ~/KaMS-Club-Bot/ip-updater/ip-updater@.service ]; then
@@ -141,6 +151,7 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
           source: "upgrade_script.sh"
           target: "~/KaMS-Club-Bot/"
           overwrite: true
@@ -153,6 +164,7 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
           script: |
             cd ~/KaMS-Club-Bot
             chmod +x upgrade_script.sh
@@ -166,6 +178,7 @@ jobs:
           username: ${{ secrets.PI_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
           script: |
             set -e
             cd ~/KaMS-Club-Bot
