@@ -1009,11 +1009,17 @@ async def dm_member(
             guild_id=guild_id,
         )
     except discord.errors.HTTPException as e:
-        # Discord refuses to open a DM with a bot with 400 (50007) rather than 403.
-        logger.error(
-            f'Failed to send message to "{member.display_name}" (id={member.id}): {e}',
-            guild_id=guild_id,
-        )
+        if member.bot and e.code == 50007:
+            # Discord refuses every DM between bots, with 400 rather than 403.
+            logger.info(
+                f'Unable to send message to bot "{member.display_name}" (id={member.id}).',
+                guild_id=guild_id,
+            )
+        else:
+            logger.error(
+                f'Failed to send message to "{member.display_name}" (id={member.id}): {e}',
+                guild_id=guild_id,
+            )
 
 
 async def message_generator(
@@ -1588,7 +1594,7 @@ async def on_ready() -> None:
         # day change: a restart before then would move the cutoff past them.
         for g in guild_objects:
             for member in g.members:
-                if not member.bot and member.id not in dta[g.id]:
+                if member.id not in dta[g.id]:
                     await _on_member_join_impl(member, dta, g)
 
     # Collect all message generators with duplicate prevention
@@ -1881,10 +1887,12 @@ async def _day_change_for_guild(guild: discord.Guild) -> None:
         members: list[discord.Member] = []
 
         for member in guild.members:
+            if member.id not in data[guild.id]:
+                await _on_member_join_impl(member, data, guild)
+            # Bots cannot vote or use the Justice Toolbox, so they are neither part of the
+            # community the scores scale by nor candidates for the justices.
             if not member.bot:
                 members.append(member)
-                if member.id not in data[guild.id]:
-                    await _on_member_join_impl(member, data, guild)
         for member_id in data[guild.id]:
             if data[guild.id][member_id].shallow_score > 0:
                 data[guild.id][member_id].deep_score += fractions.Fraction(
