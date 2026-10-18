@@ -10,6 +10,11 @@ StartLimitBurst=10
 [Service]
 User=%i
 WorkingDirectory=/home/%i/KaMS-Club-Bot
+# A login that fails comes within the bot's first 1000 s, which its excepthook treats as a
+# failed start and leaves stopped, so the bot starts only once Discord answers: after a power
+# cut the router can come back later than the Pi.
+ExecStartPre=/bin/bash -c 'while ! curl -s --connect-timeout 5 https://discord.com/api/v10/gateway >/dev/null; do echo "Waiting for Discord to be reachable..."; sleep 5; done'
+TimeoutStartSec=infinity
 ExecStart=/home/%i/KaMS-Club-Bot/venv/bin/python3.12 /home/%i/KaMS-Club-Bot/src/bot.py
 # An exception escaping the bot reaches its own excepthook, which restarts it in place
 # or exits on purpose; systemd restarts only what that cannot see, a death by signal.
