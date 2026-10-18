@@ -22,7 +22,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Kill existing bot.py process
+      - name: Stop the bot
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.HOST }}
@@ -31,8 +31,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           fingerprint: ${{ env.PI_HOST_KEY_FINGERPRINT }}
           script: |
-            pkill -f "[b]ot.py" || [ $? -eq 1 ]
-            while pgrep -f "[b]ot.py" > /dev/null; do sleep 1; done
+            sudo systemctl stop kams-bot@$(whoami).service
 
       - name: Deploy src directory to Raspberry Pi
         uses: appleboy/scp-action@v0.1.7
