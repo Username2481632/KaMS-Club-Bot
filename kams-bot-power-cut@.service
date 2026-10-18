@@ -1,0 +1,18 @@
+[Unit]
+Description=Log how the Pi went down, when it came back without a clean shutdown
+ConditionPathExists=/run/kams-bot/power-cut
+After=kams-bot-power-record.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=%i
+# The Pi has no clock battery, so the time it came back is read once the clock is synced.
+ExecStartPre=/lib/systemd/systemd-time-wait-sync
+ExecStart=/home/%i/KaMS-Club-Bot/venv/bin/python3.12 /home/%i/KaMS-Club-Bot/monitor/power_cut.py
+# The boot deploy replaces monitor/ at about the time the clock syncs.
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

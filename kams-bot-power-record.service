@@ -1,0 +1,23 @@
+[Unit]
+Description=Record whether the Pi shut down cleanly before this boot
+# Runs before systemd-timesyncd, whose clock file then still carries the last minute the Pi
+# was up.
+DefaultDependencies=no
+# Emergency mode would otherwise stop it and take the marker away.
+IgnoreOnIsolate=yes
+After=local-fs.target
+Before=systemd-timesyncd.service shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# The marker exists from boot until a clean shutdown stops this unit, so finding it at boot
+# means the previous boot ended without one. The note left for kams-bot-power-cut@ holds when
+# the Pi was last up and what the real-time clock read at boot: with no battery, it starts
+# again from 1970 when the power goes.
+ExecStart=/bin/sh -c 'if [ -e /var/lib/kams-bot/up ]; then mkdir -p /run/kams-bot && echo "$(stat -c %%Y /var/lib/systemd/timesync/clock) $(cat /sys/class/rtc/rtc0/since_epoch)" > /run/kams-bot/power-cut; fi; mkdir -p /var/lib/kams-bot && touch /var/lib/kams-bot/up'
+ExecStop=/bin/rm -f /var/lib/kams-bot/up
+
+[Install]
+WantedBy=sysinit.target
