@@ -16,6 +16,11 @@ View Channels is left out on purpose. The bot sees what @everyone sees, so a ser
 Setting the bot up:
 - Put its token in a .env file next to src/: DISCORD_BOT_TOKEN=<token>
 - Once the bot is in its servers, run `python src/bot.py --init`. It writes config.draft.json, listing every server the bot is in with each setting left null. Set them all (an empty welcome_dm sends no welcome), remove any server the bot should not serve, and run --init again, as often as it takes. When every setting is set, it creates data.json and ban_requests.json, each with a .sha256 fingerprint beside it, and turns the draft into config.json.
+- The settings, for each server:
+  - welcome_dm: the message the bot DMs each member who joins; "" sends none.
+  - purge_polls: whether the nightly update deletes everything in #polls that is not a poll, a pinned message or a message starting with "[POLL]".
+  - logger: enabled and channel_name. When enabled, the nightly update deletes from that channel Elara's logs of the bot renewing its missing-roles timeouts.
+  - required_roles: groups of role IDs. A member without a role from every group is timed out until they pick their roles; [] requires none.
 - Then run the bot without arguments. It runs only with all of these files in place and as it left them: a file that goes missing or changes stops it, rather than being started over or used unseen. To change one by hand, stop the bot, make the change, and run --init to accept it.
 """
 
